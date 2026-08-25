@@ -35,7 +35,7 @@ async function main() {
     ],
   });
 
-  const uri = `mongodb://127.0.0.1:${PORT}/xch_flower?replicaSet=rs0&directConnection=true`;
+  const uri = `mongodb://127.0.0.1:${PORT}/anahit_flower?replicaSet=rs0&directConnection=true`;
 
   console.log('');
   console.log('  Local MongoDB is running');

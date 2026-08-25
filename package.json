@@ -1,8 +1,8 @@
 {
-  "name": "xch-flower-backend",
+  "name": "anahit-flower-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Xch Flower - commerce API (Express + TypeScript + MongoDB + MinIO)",
+  "description": "Anahit Flower Design - commerce API (Express + TypeScript + MongoDB + MinIO)",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch server.ts",

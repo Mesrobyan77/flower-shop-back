@@ -161,6 +161,8 @@ export interface SeedCollection {
   subtitle: { hy: string; en: string; ru: string };
   showOnHome: boolean;
   order: number;
+  /** Wide backdrop the art-line home section lays its product rail over. */
+  bannerImage?: string;
 }
 
 /** Reference equivalents of /goods/brand?code=XXXX curated sets. */
@@ -217,7 +219,19 @@ export const seedCollections: SeedCollection[] = [
       en: 'What everyone is ordering this week',
       ru: 'Что заказывают на этой неделе',
     },
-    showOnHome: false,
+    showOnHome: true,
     order: 5,
+  },
+  {
+    slug: 'art-line',
+    title: { hy: 'Արվեստի գիծ', en: 'Art line', ru: 'Линия искусства' },
+    subtitle: {
+      hy: 'Փունջեր՝ ներշնչված նկարչությունից',
+      en: 'Bouquets composed like paintings',
+      ru: 'Букеты, вдохновлённые живописью',
+    },
+    showOnHome: true,
+    order: 6,
+    bannerImage: 'bg-famous',
   },
 ];

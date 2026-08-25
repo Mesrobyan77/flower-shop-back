@@ -1,3 +1,4 @@
+import { env } from '../../config/env';
 import type { PostType, SubscriptionCycle } from '../../constants';
 
 export interface SeedPost {
@@ -31,7 +32,7 @@ export const seedPosts: SeedPost[] = [
       en: 'Change the water daily. Cut the stems at a 45-degree angle. Keep the bouquet away from direct sun and from fruit. Remove any leaves sitting below the waterline. Keep the room between 18 and 22 degrees.',
       ru: 'Меняйте воду ежедневно. Подрезайте стебли под углом 45 градусов. Держите букет вдали от прямого солнца и фруктов. Удаляйте листья ниже уровня воды. Держите комнату при 18-22 градусах.',
     },
-    coverImage: '/images/seed/magazine-01.svg',
+    coverImage: `/images/seed/magazine-01.${env.SEED_IMAGE_EXT}`,
     tags: ['care', 'guide'],
     category: 'care',
   },
@@ -53,7 +54,7 @@ export const seedPosts: SeedPost[] = [
       en: 'A red rose is love, a white one is purity. The peony stands for prosperity and a happy marriage. A yellow tulip is sunshine and warmth. The white chrysanthemum is respect and remembrance.',
       ru: 'Красная роза — любовь, белая — чистота. Пион означает благополучие и счастливый брак. Жёлтый тюльпан — солнце и тепло. Белая хризантема — уважение и память.',
     },
-    coverImage: '/images/seed/magazine-02.svg',
+    coverImage: `/images/seed/magazine-02.${env.SEED_IMAGE_EXT}`,
     tags: ['guide'],
     category: 'guide',
   },
@@ -75,7 +76,7 @@ export const seedPosts: SeedPost[] = [
       en: 'Our day starts at the market while the city is still asleep. Every stem is picked by hand, a quality lead checks freshness, and only then do the florists start arranging.',
       ru: 'Наш день начинается на рынке, когда город ещё спит. Каждый стебель отбирается вручную, менеджер по качеству проверяет свежесть, и только потом флористы начинают работу.',
     },
-    coverImage: '/images/seed/magazine-03.svg',
+    coverImage: `/images/seed/magazine-03.${env.SEED_IMAGE_EXT}`,
     tags: ['studio'],
     category: 'studio',
   },
@@ -165,7 +166,7 @@ export const seedPosts: SeedPost[] = [
       en: 'Right after registration 2,000 AMD in points lands in your account, ready to use on your very first order.',
       ru: 'Сразу после регистрации на счёт зачисляется 2 000 драм бонусами, которые можно потратить на первый заказ.',
     },
-    coverImage: '/images/seed/event-01.svg',
+    coverImage: `/images/seed/event-01.${env.SEED_IMAGE_EXT}`,
     isPinned: true,
   },
 ];
@@ -191,7 +192,7 @@ export const seedPlans: SeedPlan[] = [
     },
     pricePerDelivery: 9500,
     cycle: 'weekly',
-    image: '/images/seed/subscribe-01.svg',
+    image: `/images/seed/subscribe-01.${env.SEED_IMAGE_EXT}`,
     order: 1,
   },
   {
@@ -204,7 +205,7 @@ export const seedPlans: SeedPlan[] = [
     },
     pricePerDelivery: 16000,
     cycle: 'biweekly',
-    image: '/images/seed/subscribe-02.svg',
+    image: `/images/seed/subscribe-02.${env.SEED_IMAGE_EXT}`,
     order: 2,
   },
   {
@@ -217,7 +218,7 @@ export const seedPlans: SeedPlan[] = [
     },
     pricePerDelivery: 26000,
     cycle: 'monthly',
-    image: '/images/seed/subscribe-03.svg',
+    image: `/images/seed/subscribe-03.${env.SEED_IMAGE_EXT}`,
     order: 3,
   },
 ];
@@ -235,7 +236,7 @@ export const seedSettings = {
   },
   heroSlides: [
     {
-      image: '/images/seed/hero-01.svg',
+      image: `/images/seed/hero-01.${env.SEED_IMAGE_EXT}`,
       title: {
         hy: 'Ծաղիկների առաքում ամբողջ Հայաստանում',
         en: 'Flower delivery across Armenia',
@@ -252,7 +253,7 @@ export const seedSettings = {
       order: 1,
     },
     {
-      image: '/images/seed/hero-02.svg',
+      image: `/images/seed/hero-02.${env.SEED_IMAGE_EXT}`,
       title: { hy: 'Ամսվա ծաղիկը՝ պիոն', en: 'Flower of the month: peony', ru: 'Цветок месяца: пион' },
       subtitle: {
         hy: 'Սեզոնի ամենասպասված ծաղիկն արդեն ստուդիայում է',
@@ -265,7 +266,7 @@ export const seedSettings = {
       order: 2,
     },
     {
-      image: '/images/seed/hero-03.svg',
+      image: `/images/seed/hero-03.${env.SEED_IMAGE_EXT}`,
       title: { hy: 'Ծաղկի բաժանորդագրություն', en: 'Flower subscription', ru: 'Подписка на цветы' },
       subtitle: {
         hy: 'Թարմ ծաղիկներ՝ ամեն շաբաթ, առանց հիշեցումների',
@@ -279,20 +280,20 @@ export const seedSettings = {
     },
   ],
   themeTiles: [
-    { image: '/images/seed/tile-01.svg', title: { hy: 'Ծննդյան օր', en: 'Birthday', ru: 'День рождения' }, href: '/catalog/flower-gifts', animated: false, order: 1 },
-    { image: '/images/seed/tile-02.svg', title: { hy: 'Սեր և շնորհակալություն', en: 'Love and thanks', ru: 'Любовь и благодарность' }, href: '/catalog/roses', animated: false, order: 2 },
-    { image: '/images/seed/tile-03.svg', title: { hy: 'Այսօր առաքում', en: 'Same-day delivery', ru: 'Доставка сегодня' }, href: '/catalog/flower-gifts?delivery=quick', animated: true, order: 3 },
-    { image: '/images/seed/tile-04.svg', title: { hy: 'Բացման նվեր', en: 'Opening gift', ru: 'Подарок на открытие' }, href: '/catalog/opening-plants', animated: false, order: 4 },
-    { image: '/images/seed/tile-05.svg', title: { hy: 'Առաջխաղացում', en: 'Promotion', ru: 'Повышение' }, href: '/catalog/promotion', animated: false, order: 5 },
-    { image: '/images/seed/tile-06.svg', title: { hy: 'Հարսանիք', en: 'Wedding', ru: 'Свадьба' }, href: '/catalog/wedding-flowers', animated: false, order: 6 },
-    { image: '/images/seed/tile-07.svg', title: { hy: 'Հոգեհանգիստ', en: 'Condolence', ru: 'Соболезнование' }, href: '/catalog/funeral-wreaths', animated: false, order: 7 },
-    { image: '/images/seed/tile-08.svg', title: { hy: 'DIY ծաղկաշուկա', en: 'DIY market', ru: 'DIY рынок' }, href: '/catalog/diy-market', animated: false, order: 8 },
+    { image: `/images/seed/tile-01.${env.SEED_IMAGE_EXT}`, title: { hy: 'Ծննդյան օր', en: 'Birthday', ru: 'День рождения' }, href: '/catalog/flower-gifts', animated: false, order: 1 },
+    { image: `/images/seed/tile-02.${env.SEED_IMAGE_EXT}`, title: { hy: 'Սեր և շնորհակալություն', en: 'Love and thanks', ru: 'Любовь и благодарность' }, href: '/catalog/roses', animated: false, order: 2 },
+    { image: `/images/seed/tile-03.${env.SEED_IMAGE_EXT}`, title: { hy: 'Այսօր առաքում', en: 'Same-day delivery', ru: 'Доставка сегодня' }, href: '/catalog/flower-gifts?delivery=quick', animated: true, order: 3 },
+    { image: `/images/seed/tile-04.${env.SEED_IMAGE_EXT}`, title: { hy: 'Բացման նվեր', en: 'Opening gift', ru: 'Подарок на открытие' }, href: '/catalog/opening-plants', animated: false, order: 4 },
+    { image: `/images/seed/tile-05.${env.SEED_IMAGE_EXT}`, title: { hy: 'Առաջխաղացում', en: 'Promotion', ru: 'Повышение' }, href: '/catalog/promotion', animated: false, order: 5 },
+    { image: `/images/seed/tile-06.${env.SEED_IMAGE_EXT}`, title: { hy: 'Հարսանիք', en: 'Wedding', ru: 'Свадьба' }, href: '/catalog/wedding-flowers', animated: false, order: 6 },
+    { image: `/images/seed/tile-07.${env.SEED_IMAGE_EXT}`, title: { hy: 'Հոգեհանգիստ', en: 'Condolence', ru: 'Соболезнование' }, href: '/catalog/funeral-wreaths', animated: false, order: 7 },
+    { image: `/images/seed/tile-08.${env.SEED_IMAGE_EXT}`, title: { hy: 'DIY ծաղկաշուկա', en: 'DIY market', ru: 'DIY рынок' }, href: '/catalog/diy-market', animated: false, order: 8 },
   ],
   counters: { reviews: 103535, deliveries: 833111, awardYears: 9 },
   contact: {
     phone: '+374 10 500 700',
     overseasPhone: '+374 99 500 700',
-    email: 'info@xch-flower.am',
+    email: 'info@anahit-flower.am',
     hours: {
       hy: 'Ամեն օր 08:00 - 20:00',
       en: 'Every day 08:00 - 20:00',

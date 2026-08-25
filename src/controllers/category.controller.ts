@@ -21,10 +21,24 @@ export const bySlug = asyncHandler(async (req: Request, res: Response) => {
   return ok(res, { category, children, descendantIds: ids });
 });
 
+/**
+ * Fields a product card paints. Both collection endpoints populate the same
+ * shape so the home rails and the collection page render identical cards.
+ */
+const CARD_FIELDS =
+  'slug name price compareAtPrice thumbnail images badges ratingAverage ratingCount soldCount sameDayAvailable deliveryMethods';
+
 export const collections = asyncHandler(async (req: Request, res: Response) => {
   const filter: Record<string, unknown> = { isActive: true };
   if (req.query.home === 'true') filter.showOnHome = true;
-  const items = await Collection.find(filter).sort({ order: 1 }).lean();
+
+  // The home page renders these as product rails, so the products come back
+  // populated rather than as bare ids.
+  const items = await Collection.find(filter)
+    .sort({ order: 1 })
+    .populate({ path: 'products', match: { isActive: true }, select: CARD_FIELDS })
+    .lean();
+
   return ok(res, items);
 });
 
@@ -32,7 +46,7 @@ export const collectionBySlug = asyncHandler(async (req: Request, res: Response)
   const collection = await Collection.findOne({ slug: req.params.slug, isActive: true }).populate({
     path: 'products',
     match: { isActive: true },
-    select: 'slug name price compareAtPrice thumbnail images badges ratingAverage ratingCount deliveryMethods',
+    select: CARD_FIELDS,
   });
   if (!collection) throw ApiError.notFound('Collection not found');
   return ok(res, collection);

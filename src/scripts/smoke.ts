@@ -269,7 +269,7 @@ async function main() {
 
   const adminLogin = await call('/auth/login', {
     method: 'POST',
-    body: { email: process.env.SEED_ADMIN_EMAIL ?? 'admin@xch-flower.am', password: process.env.SEED_ADMIN_PASSWORD ?? 'Admin123!' },
+    body: { email: process.env.SEED_ADMIN_EMAIL ?? 'admin@anahit-flower.am', password: process.env.SEED_ADMIN_PASSWORD ?? 'Admin123!' },
   });
   check('admin signs in', adminLogin.status === 200, adminLogin.body);
   const adminToken = adminLogin.body.data.accessToken;

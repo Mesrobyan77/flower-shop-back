@@ -24,7 +24,7 @@ const schema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
 
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
-  MONGODB_DB: z.string().default('xch_flower'),
+  MONGODB_DB: z.string().default('anahit_flower'),
 
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 chars'),
   JWT_EXPIRES_IN: z.string().default('15m'),
@@ -37,7 +37,7 @@ const schema = z.object({
   MINIO_USE_SSL: bool(false),
   MINIO_ACCESS_KEY: z.string().default('minioadmin'),
   MINIO_SECRET_KEY: z.string().default('minioadmin'),
-  MINIO_BUCKET: z.string().default('xch-flower'),
+  MINIO_BUCKET: z.string().default('anahit-flower'),
   MINIO_PUBLIC_URL: z.string().default('http://127.0.0.1:9000'),
 
   CURRENCY: z.string().default('AMD'),
@@ -47,7 +47,10 @@ const schema = z.object({
   QUICK_FEE: num(2500),
   RURAL_SURCHARGE: num(3000),
 
-  SEED_ADMIN_EMAIL: z.string().email().default('admin@xch-flower.am'),
+  // 'svg' uses the generated placeholder artwork; switch to 'jpg' once
+  // scripts/fetch-seed-photos.mjs has pulled licensed photography.
+  SEED_IMAGE_EXT: z.enum(['svg', 'jpg']).default('svg'),
+  SEED_ADMIN_EMAIL: z.string().email().default('admin@anahit-flower.am'),
   SEED_ADMIN_PASSWORD: z.string().default('Admin123!'),
 });
 

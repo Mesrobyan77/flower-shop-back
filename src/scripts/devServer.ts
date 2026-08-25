@@ -10,9 +10,9 @@
 import { MongoMemoryServer } from 'mongodb-memory-server';
 
 async function main() {
-  const mongo = await MongoMemoryServer.create({ instance: { dbName: 'xch_flower' } });
+  const mongo = await MongoMemoryServer.create({ instance: { dbName: 'anahit_flower' } });
   process.env.MONGODB_URI = mongo.getUri();
-  process.env.MONGODB_DB = 'xch_flower';
+  process.env.MONGODB_DB = 'anahit_flower';
 
   console.log(`In-memory MongoDB started at ${mongo.getUri()}`);
 

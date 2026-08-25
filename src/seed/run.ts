@@ -114,14 +114,14 @@ async function seedUsers() {
     await User.create({
       email: env.SEED_ADMIN_EMAIL,
       password: env.SEED_ADMIN_PASSWORD,
-      name: 'Xch Flower Admin',
+      name: 'Anahit Flower Design Admin',
       phone: '+374 10 500 700',
       role: 'admin',
     });
     logger.info(`Admin created: ${env.SEED_ADMIN_EMAIL} / ${env.SEED_ADMIN_PASSWORD}`);
   }
 
-  const demoEmail = 'demo@xch-flower.am';
+  const demoEmail = 'demo@anahit-flower.am';
   if (!(await User.exists({ email: demoEmail }))) {
     await User.create({
       email: demoEmail,
@@ -160,7 +160,7 @@ async function seedCategoryTree() {
         icon: item.icon,
         isActive: true,
         showInNav: item.showInNav ?? depth === 0,
-        image: `/images/seed/cat-${item.slug}.svg`,
+        image: `/images/seed/cat-${item.slug}.${env.SEED_IMAGE_EXT}`,
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
@@ -185,7 +185,7 @@ async function seedCatalog(categoryIds: Map<string, { id: unknown; ancestors: un
     if (item.withAddons) optionGroups.push(chocolateAddon, candyAddon);
 
     const images = [1, 2, 3].map((n) => ({
-      url: `/images/seed/${item.image}${n === 1 ? '' : `-${n}`}.svg`,
+      url: `/images/seed/${item.image}${n === 1 ? '' : `-${n}`}.${env.SEED_IMAGE_EXT}`,
       alt: item.name.hy,
       order: n,
     }));
@@ -245,7 +245,10 @@ async function seedCatalog(categoryIds: Map<string, { id: unknown; ancestors: un
         slug: item.slug,
         title: item.title,
         subtitle: item.subtitle,
-        coverImage: `/images/seed/collection-${item.slug}.svg`,
+        coverImage: `/images/seed/collection-${item.slug}.${env.SEED_IMAGE_EXT}`,
+        bannerImage: item.bannerImage
+          ? `/images/seed/${item.bannerImage}.${env.SEED_IMAGE_EXT}`
+          : undefined,
         products: collectionMembers.get(item.slug) ?? [],
         order: item.order,
         showOnHome: item.showOnHome,
@@ -277,7 +280,7 @@ async function seedContent() {
 }
 
 async function seedReviews() {
-  const demo = await User.findOne({ email: 'demo@xch-flower.am' });
+  const demo = await User.findOne({ email: 'demo@anahit-flower.am' });
   if (!demo) return;
 
   const products = await Product.find({ ratingCount: { $gt: 0 } }).limit(8);
