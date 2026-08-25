@@ -1,6 +1,6 @@
 import path from 'path';
-import { env } from '../config/env';
-import { ensureBucket, minioClient, publicUrl } from '../config/minio';
+import type { UploadApiResponse } from 'cloudinary';
+import { cloudinary, ensureCloudinary, scopedFolder } from '../config/cloudinary';
 import { Media, type MediaDocument } from '../models/Media';
 import { ApiError } from '../utils/ApiError';
 import { randomToken } from '../utils/codes';
@@ -16,32 +16,62 @@ export interface UploadInput {
   uploadedBy?: string;
 }
 
-function buildKey(folder: string, originalName: string): string {
-  const ext = path.extname(originalName).toLowerCase() || '.bin';
+/**
+ * Cloudinary public ids carry no extension - the delivery URL appends it.
+ * Keeping the yyyymm segment makes the media library browsable by upload month.
+ */
+function buildPublicId(originalName: string): string {
+  const ext = path.extname(originalName);
   const base = slugify(path.basename(originalName, ext)) || 'file';
   const now = new Date();
   const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-  return `${folder}/${yyyymm}/${base}-${randomToken(6)}${ext}`;
+  return `${yyyymm}/${base}-${randomToken(6)}`;
+}
+
+function uploadBuffer(buffer: Buffer, folder: string, publicId: string): Promise<UploadApiResponse> {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: publicId,
+        resource_type: 'image',
+        overwrite: false,
+      },
+      (err, result) => {
+        if (err || !result) reject(err ?? new Error('Cloudinary returned no result'));
+        else resolve(result);
+      },
+    );
+    stream.end(buffer);
+  });
+}
+
+/**
+ * Delivery URL. `f_auto` / `q_auto` let Cloudinary re-encode to webp or avif per
+ * browser, and an optional width caps the transfer - one upload serves every
+ * breakpoint, so no resizing happens on our side.
+ */
+export function deliveryUrl(key: string, width?: number): string {
+  const transformation: Record<string, unknown>[] = [];
+  if (width) transformation.push({ width, crop: 'limit' });
+  transformation.push({ quality: 'auto', fetch_format: 'auto' });
+  return cloudinary.url(key, { secure: true, transformation });
 }
 
 export async function uploadMedia(input: UploadInput): Promise<MediaDocument> {
-  const available = await ensureBucket();
-  if (!available) throw ApiError.internal('Object storage is unavailable, please try again later');
+  if (!ensureCloudinary()) throw ApiError.internal('Media storage is not configured, please try again later');
 
   const folder = slugify(input.folder ?? 'misc') || 'misc';
-  const key = buildKey(folder, input.originalName);
-
-  await minioClient.putObject(env.MINIO_BUCKET, key, input.buffer, input.size, {
-    'Content-Type': input.mimeType,
-    'Cache-Control': 'public, max-age=31536000, immutable',
-  });
+  const result = await uploadBuffer(input.buffer, scopedFolder(folder), buildPublicId(input.originalName));
 
   return Media.create({
-    key,
-    url: publicUrl(key),
+    key: result.public_id,
+    url: deliveryUrl(result.public_id),
     originalName: input.originalName,
     mimeType: input.mimeType,
-    size: input.size,
+    size: result.bytes ?? input.size,
+    width: result.width,
+    height: result.height,
     folder,
     alt: input.alt,
     uploadedBy: input.uploadedBy,
@@ -53,15 +83,10 @@ export async function deleteMedia(id: string): Promise<void> {
   if (!media) throw ApiError.notFound('Media not found');
 
   try {
-    await minioClient.removeObject(env.MINIO_BUCKET, media.key);
+    await cloudinary.uploader.destroy(media.key, { resource_type: 'image', invalidate: true });
   } catch {
-    // The DB row is still removed: a stale object is preferable to a dangling reference.
+    // The DB row is still removed: a stale asset is preferable to a dangling reference.
   }
 
   await media.deleteOne();
-}
-
-/** Signed URL for private previews, e.g. drafts not yet published. */
-export function presignedUrl(key: string, expirySeconds = 300) {
-  return minioClient.presignedGetObject(env.MINIO_BUCKET, key, expirySeconds);
 }

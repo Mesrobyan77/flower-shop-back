@@ -2,11 +2,11 @@ import { createApp } from './src/app';
 import { connectDatabase, disconnectDatabase } from './src/config/db';
 import { env } from './src/config/env';
 import { logger } from './src/config/logger';
-import { ensureBucket } from './src/config/minio';
+import { ensureCloudinary } from './src/config/cloudinary';
 
 async function bootstrap() {
   await connectDatabase();
-  await ensureBucket();
+  ensureCloudinary();
 
   const app = createApp();
   const server = app.listen(env.PORT, () => {

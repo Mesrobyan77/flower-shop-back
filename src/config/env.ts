@@ -4,12 +4,6 @@ import { z } from 'zod';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
-const bool = (def: boolean) =>
-  z
-    .string()
-    .optional()
-    .transform((v) => (v === undefined ? def : v === 'true' || v === '1'));
-
 const num = (def: number) =>
   z
     .string()
@@ -32,13 +26,12 @@ const schema = z.object({
   JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
   COOKIE_DOMAIN: z.string().default('localhost'),
 
-  MINIO_ENDPOINT: z.string().default('127.0.0.1'),
-  MINIO_PORT: num(9000),
-  MINIO_USE_SSL: bool(false),
-  MINIO_ACCESS_KEY: z.string().default('minioadmin'),
-  MINIO_SECRET_KEY: z.string().default('minioadmin'),
-  MINIO_BUCKET: z.string().default('anahit-flower'),
-  MINIO_PUBLIC_URL: z.string().default('http://127.0.0.1:9000'),
+  // Media lives in Cloudinary. Left empty the API still boots on the seeded
+  // local artwork; only admin uploads need real credentials.
+  CLOUDINARY_CLOUD_NAME: z.string().default(''),
+  CLOUDINARY_API_KEY: z.string().default(''),
+  CLOUDINARY_API_SECRET: z.string().default(''),
+  CLOUDINARY_FOLDER: z.string().default('anahit-flower'),
 
   CURRENCY: z.string().default('AMD'),
   CURRENCY_SYMBOL: z.string().default('\u058F'),

@@ -32,7 +32,7 @@ export const phone = z
   .regex(/^[+0-9()\-\s]+$/, 'Phone number contains invalid characters');
 
 /**
- * Media may be an absolute MinIO/CDN URL or a root-relative path served by the
+ * Media may be an absolute Cloudinary/CDN URL or a root-relative path served by the
  * web app (the seeded artwork lives under /images/seed).
  */
 export const imageUrl = z

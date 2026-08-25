@@ -20,10 +20,10 @@ async function main() {
   const { connectDatabase } = await import('../config/db');
   const { createApp } = await import('../app');
   const { env } = await import('../config/env');
-  const { ensureBucket } = await import('../config/minio');
+  const { ensureCloudinary } = await import('../config/cloudinary');
 
   await connectDatabase();
-  await ensureBucket();
+  ensureCloudinary();
 
   const seed = await import('../seed/run');
   await seed.runSeed();

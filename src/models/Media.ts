@@ -1,7 +1,7 @@
 import { Schema, model, type Document, type Types } from 'mongoose';
 import { baseToJSON } from './common';
 
-/** Binary lives in MinIO; Mongo keeps only the object key and metadata. */
+/** Binary lives in Cloudinary; Mongo keeps only the public id and metadata. */
 export interface MediaDocument extends Document {
   _id: Types.ObjectId;
   key: string;

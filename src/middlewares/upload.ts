@@ -5,7 +5,7 @@ const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 
 
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
-/** Files are buffered in memory and streamed straight into MinIO. */
+/** Files are buffered in memory and streamed straight into Cloudinary. */
 export const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_UPLOAD_BYTES, files: 10 },
