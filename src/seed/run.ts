@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import { env } from '../config/env';
+import { seedImage } from './images';
 import { logger } from '../config/logger';
 import {
   Address,
@@ -160,7 +161,7 @@ async function seedCategoryTree() {
         icon: item.icon,
         isActive: true,
         showInNav: item.showInNav ?? depth === 0,
-        image: `/images/seed/cat-${item.slug}.${env.SEED_IMAGE_EXT}`,
+        image: seedImage(`cat-${item.slug}`),
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
@@ -185,7 +186,7 @@ async function seedCatalog(categoryIds: Map<string, { id: unknown; ancestors: un
     if (item.withAddons) optionGroups.push(chocolateAddon, candyAddon);
 
     const images = [1, 2, 3].map((n) => ({
-      url: `/images/seed/${item.image}${n === 1 ? '' : `-${n}`}.${env.SEED_IMAGE_EXT}`,
+      url: seedImage(`${item.image}${n === 1 ? '' : `-${n}`}`),
       alt: item.name.hy,
       order: n,
     }));
@@ -245,10 +246,8 @@ async function seedCatalog(categoryIds: Map<string, { id: unknown; ancestors: un
         slug: item.slug,
         title: item.title,
         subtitle: item.subtitle,
-        coverImage: `/images/seed/collection-${item.slug}.${env.SEED_IMAGE_EXT}`,
-        bannerImage: item.bannerImage
-          ? `/images/seed/${item.bannerImage}.${env.SEED_IMAGE_EXT}`
-          : undefined,
+        coverImage: seedImage(`collection-${item.slug}`),
+        bannerImage: item.bannerImage ? seedImage(item.bannerImage) : undefined,
         products: collectionMembers.get(item.slug) ?? [],
         order: item.order,
         showOnHome: item.showOnHome,

@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "dev:memory": "tsx src/scripts/devServer.ts",
     "smoke": "tsx src/scripts/smoke.ts",
-    "mongo:local": "tsx src/scripts/localMongo.ts"
+    "mongo:local": "tsx src/scripts/localMongo.ts",
+    "seed:images": "tsx src/scripts/uploadSeedImages.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

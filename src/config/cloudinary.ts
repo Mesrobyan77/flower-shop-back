@@ -38,3 +38,15 @@ export function scopedFolder(folder: string): string {
   const root = env.CLOUDINARY_FOLDER.replace(/^\/+|\/+$/g, '');
   return root ? `${root}/${folder}` : folder;
 }
+
+/**
+ * Delivery URL. `f_auto` / `q_auto` let Cloudinary re-encode to webp or avif per
+ * browser, and an optional width caps the transfer - one upload serves every
+ * breakpoint, so no resizing happens on our side.
+ */
+export function deliveryUrl(key: string, width?: number): string {
+  const transformation: Record<string, unknown>[] = [];
+  if (width) transformation.push({ width, crop: 'limit' });
+  transformation.push({ quality: 'auto', fetch_format: 'auto' });
+  return cloudinary.url(key, { secure: true, transformation });
+}

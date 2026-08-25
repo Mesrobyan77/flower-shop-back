@@ -1,6 +1,6 @@
 import path from 'path';
 import type { UploadApiResponse } from 'cloudinary';
-import { cloudinary, ensureCloudinary, scopedFolder } from '../config/cloudinary';
+import { cloudinary, deliveryUrl, ensureCloudinary, scopedFolder } from '../config/cloudinary';
 import { Media, type MediaDocument } from '../models/Media';
 import { ApiError } from '../utils/ApiError';
 import { randomToken } from '../utils/codes';
@@ -44,18 +44,6 @@ function uploadBuffer(buffer: Buffer, folder: string, publicId: string): Promise
     );
     stream.end(buffer);
   });
-}
-
-/**
- * Delivery URL. `f_auto` / `q_auto` let Cloudinary re-encode to webp or avif per
- * browser, and an optional width caps the transfer - one upload serves every
- * breakpoint, so no resizing happens on our side.
- */
-export function deliveryUrl(key: string, width?: number): string {
-  const transformation: Record<string, unknown>[] = [];
-  if (width) transformation.push({ width, crop: 'limit' });
-  transformation.push({ quality: 'auto', fetch_format: 'auto' });
-  return cloudinary.url(key, { secure: true, transformation });
 }
 
 export async function uploadMedia(input: UploadInput): Promise<MediaDocument> {

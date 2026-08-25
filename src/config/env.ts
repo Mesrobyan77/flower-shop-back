@@ -43,6 +43,9 @@ const schema = z.object({
   // 'svg' uses the generated placeholder artwork; switch to 'jpg' once
   // scripts/fetch-seed-photos.mjs has pulled licensed photography.
   SEED_IMAGE_EXT: z.enum(['svg', 'jpg']).default('svg'),
+  // 'local' serves the artwork from frontend/public; 'cloudinary' points the
+  // catalogue at the uploads made by npm run seed:images.
+  SEED_IMAGE_SOURCE: z.enum(['local', 'cloudinary']).default('local'),
   SEED_ADMIN_EMAIL: z.string().email().default('admin@anahit-flower.am'),
   SEED_ADMIN_PASSWORD: z.string().default('Admin123!'),
 });
