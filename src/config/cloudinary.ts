@@ -7,6 +7,8 @@ cloudinary.config({
   api_key: env.CLOUDINARY_API_KEY,
   api_secret: env.CLOUDINARY_API_SECRET,
   secure: true,
+  // Keeps the stored delivery URL free of the SDK's ?_a= analytics query param.
+  analytics: false,
 });
 
 export { cloudinary };
