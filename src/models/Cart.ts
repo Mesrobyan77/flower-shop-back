@@ -68,10 +68,19 @@ const cartSchema = new Schema<CartDocument>(
   { timestamps: true, toJSON: baseToJSON, toObject: baseToJSON },
 );
 
-/** Guest carts expire after 30 days of inactivity; member carts persist. */
+/**
+ * Guest carts expire after 30 days of inactivity; member carts persist.
+ *
+ * The "is a guest cart" test has to be expressible as a partial index filter, and
+ * MongoDB refuses `$exists: false` (or `$not`) there - `$exists: true` is the
+ * supported direction. A cart carries `sessionId` for exactly as long as it is a
+ * guest cart: signing in either clears it (the cart becomes the member's) or the
+ * guest cart is merged and removed. So the sessionId is the guest marker, and the
+ * TTL index is buildable.
+ */
 cartSchema.index(
   { updatedAt: 1 },
-  { expireAfterSeconds: 60 * 60 * 24 * 30, partialFilterExpression: { user: { $exists: false } } },
+  { expireAfterSeconds: 60 * 60 * 24 * 30, partialFilterExpression: { sessionId: { $exists: true } } },
 );
 
 export const Cart = model<CartDocument>('Cart', cartSchema);

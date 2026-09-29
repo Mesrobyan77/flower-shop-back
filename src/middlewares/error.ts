@@ -1,9 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
 import mongoose from 'mongoose';
+import multer from 'multer';
 import { ZodError } from 'zod';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
 import { ApiError, type FieldErrors } from '../utils/ApiError';
+import { MAX_UPLOAD_BYTES } from './upload';
 
 export function notFoundHandler(req: Request, _res: Response, next: NextFunction) {
   next(ApiError.notFound(`Route ${req.method} ${req.originalUrl} does not exist`));
@@ -39,6 +41,16 @@ function normalize(err: unknown): ApiError {
 
   if ((err as { type?: string })?.type === 'entity.too.large') {
     return new ApiError(413, 'Payload too large');
+  }
+
+  /**
+   * Multer rejects an upload before any route code runs, so its limits surface
+   * here: a file over the size cap is a 413 and the count/field limits are client
+   * errors - never a 500 for something the caller got wrong.
+   */
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') return new ApiError(413, `Upload is larger than the ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB limit`);
+    return ApiError.badRequest(`Upload rejected: ${err.message}`);
   }
 
   return ApiError.internal(err instanceof Error ? err.message : 'Internal server error');

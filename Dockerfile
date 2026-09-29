@@ -15,5 +15,8 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
+# The API keeps no state on disk (MongoDB and Cloudinary hold everything), so the
+# runtime needs no privileges and runs as the unprivileged `node` user.
+USER node
 EXPOSE 5000
 CMD ["node", "dist/server.js"]

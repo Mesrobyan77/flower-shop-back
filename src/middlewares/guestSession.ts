@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { env } from '../config/env';
 import { randomToken } from '../utils/codes';
 
 export const GUEST_COOKIE = 'xf_sid';
@@ -15,6 +16,7 @@ export function guestSession(req: Request, res: Response, next: NextFunction) {
     sid = randomToken(16);
     res.cookie(GUEST_COOKIE, sid, {
       httpOnly: true,
+      secure: env.isProd,
       sameSite: 'lax',
       maxAge: 1000 * 60 * 60 * 24 * 30,
       path: '/',

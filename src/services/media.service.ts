@@ -4,6 +4,7 @@ import { cloudinary, deliveryUrl, ensureCloudinary, scopedFolder } from '../conf
 import { Media, type MediaDocument } from '../models/Media';
 import { ApiError } from '../utils/ApiError';
 import { randomToken } from '../utils/codes';
+import { bufferMatchesMimeType } from '../utils/imageType';
 import { slugify } from '../utils/slug';
 
 export interface UploadInput {
@@ -47,6 +48,15 @@ function uploadBuffer(buffer: Buffer, folder: string, publicId: string): Promise
 }
 
 export async function uploadMedia(input: UploadInput): Promise<MediaDocument> {
+  /**
+   * The multipart part header is client-supplied, so the bytes are checked against
+   * it before anything leaves the process. Cheap, and it keeps non-image payloads
+   * out of the media library.
+   */
+  if (!bufferMatchesMimeType(input.buffer, input.mimeType)) {
+    throw ApiError.badRequest('The uploaded file does not look like the image type it declares');
+  }
+
   if (!ensureCloudinary()) throw ApiError.internal('Media storage is not configured, please try again later');
 
   const folder = slugify(input.folder ?? 'misc') || 'misc';

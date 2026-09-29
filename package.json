@@ -21,6 +21,9 @@
     "idempotency:concurrency": "tsx src/scripts/idempotencyConcurrency.ts",
     "idempotency:concurrency:no-tx": "tsx src/scripts/idempotencyConcurrency.ts --no-transactions",
     "mongo:local": "tsx src/scripts/localMongo.ts",
+    "db:indexes": "tsx src/scripts/syncIndexes.ts",
+    "security:check": "tsx src/scripts/securityCheck.ts",
+    "security:check:prod": "tsx src/scripts/securityCheck.ts --prod",
     "seed:images": "tsx src/scripts/uploadSeedImages.ts"
   },
   "dependencies": {

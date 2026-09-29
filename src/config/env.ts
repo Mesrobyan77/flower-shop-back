@@ -11,6 +11,73 @@ const num = (def: number) =>
     .transform((v) => (v === undefined || v === '' ? def : Number(v)))
     .pipe(z.number().finite());
 
+/** A production secret has to be long enough that guessing it is not a strategy. */
+const PROD_SECRET_MIN_LENGTH = 32;
+/** The placeholder shipped in .env.example must never secure a real deployment. */
+const EXAMPLE_SECRETS = new Set(['change-me-to-a-long-random-string']);
+
+/** SRV URIs are TLS by default; a plain URI has to ask for it explicitly. */
+function usesEncryptedTransport(uri: string): boolean {
+  return uri.startsWith('mongodb+srv://') || /[?&](tls|ssl)=true/i.test(uri);
+}
+
+/**
+ * Production-only refinements. Everything the shop cannot safely infer is stated
+ * here so a misconfigured deployment fails at boot instead of running with a
+ * published secret, a plaintext database connection or credential-less CORS.
+ * Messages name the variable but never echo its value.
+ */
+function productionIssues(
+  cfg: {
+    NODE_ENV: string;
+    JWT_SECRET: string;
+    JWT_REFRESH_SECRET: string;
+    MONGODB_URI: string;
+    MONGODB_TLS?: 'disabled';
+    CORS_ORIGINS: string;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (cfg.NODE_ENV !== 'production') return;
+
+  for (const key of ['JWT_SECRET', 'JWT_REFRESH_SECRET'] as const) {
+    const value = cfg[key];
+    if (EXAMPLE_SECRETS.has(value)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: 'still holds the .env.example placeholder' });
+    } else if (value.length < PROD_SECRET_MIN_LENGTH) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `must be at least ${PROD_SECRET_MIN_LENGTH} characters in production`,
+      });
+    }
+  }
+
+  if (cfg.JWT_SECRET === cfg.JWT_REFRESH_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['JWT_REFRESH_SECRET'],
+      message: 'must differ from JWT_SECRET in production',
+    });
+  }
+
+  if (cfg.MONGODB_TLS !== 'disabled' && !usesEncryptedTransport(cfg.MONGODB_URI)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['MONGODB_URI'],
+      message: 'must use mongodb+srv:// or ?tls=true in production (set MONGODB_TLS=disabled to opt out)',
+    });
+  }
+
+  if (cfg.CORS_ORIGINS.split(',').some((origin) => origin.trim() === '*')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['CORS_ORIGINS'],
+      message: 'must list explicit origins - "*" is not accepted while credentialed CORS is enabled',
+    });
+  }
+}
+
 const schema = z.object({
   PORT: num(5000),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -48,7 +115,13 @@ const schema = z.object({
   SEED_IMAGE_SOURCE: z.enum(['local', 'cloudinary']).default('local'),
   SEED_ADMIN_EMAIL: z.string().email().default('admin@anahit-flower.am'),
   SEED_ADMIN_PASSWORD: z.string().default('Admin123!'),
-});
+
+  /**
+   * Escape hatch for a database on a private network: 'disabled' lets a plaintext
+   * mongodb:// URI through in production. Absent, production demands encryption.
+   */
+  MONGODB_TLS: z.enum(['disabled']).optional(),
+}).superRefine(productionIssues);
 
 const parsed = schema.safeParse(process.env);
 

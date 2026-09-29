@@ -1,0 +1,13 @@
+# Build context hygiene: local state and secrets never belong in an image layer.
+# `.env` holds the database and Cloudinary credentials, so it is excluded outright;
+# the runtime stage receives configuration from the deployment environment instead.
+.git
+.gitignore
+.env*
+node_modules
+dist
+coverage
+.mongo-data
+*.log
+Dockerfile
+.dockerignore
