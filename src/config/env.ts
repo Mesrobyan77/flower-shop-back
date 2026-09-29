@@ -16,6 +16,16 @@ const PROD_SECRET_MIN_LENGTH = 32;
 /** The placeholder shipped in .env.example must never secure a real deployment. */
 const EXAMPLE_SECRETS = new Set(['change-me-to-a-long-random-string']);
 
+/**
+ * The development demo admin pair. Handy on a laptop, catastrophic on a live
+ * shop: production refuses both values at boot and demands an explicit pair the
+ * operator chose, so no code path can resolve a published password there.
+ */
+const DEV_SEED_ADMIN_EMAIL = 'admin@anahit-flower.am';
+const DEV_SEED_ADMIN_PASSWORD = 'Admin123!';
+/** Bootstrap credentials a production deployment states for itself. */
+const PROD_SEED_ADMIN_MIN_LENGTH = 16;
+
 /** SRV URIs are TLS by default; a plain URI has to ask for it explicitly. */
 function usesEncryptedTransport(uri: string): boolean {
   return uri.startsWith('mongodb+srv://') || /[?&](tls|ssl)=true/i.test(uri);
@@ -48,6 +58,8 @@ function productionIssues(
     MONGODB_URI: string;
     MONGODB_TLS?: 'disabled';
     CORS_ORIGINS: string;
+    SEED_ADMIN_EMAIL: string;
+    SEED_ADMIN_PASSWORD: string;
   },
   ctx: z.RefinementCtx,
 ) {
@@ -89,6 +101,32 @@ function productionIssues(
       message: 'must list explicit origins - "*" is not accepted while credentialed CORS is enabled',
     });
   }
+
+  // A demo admin pair is a door with a published key. Production boots only
+  // with an explicit bootstrap address and a password nobody has ever seen
+  // shipped; when the variables are absent the development defaults fall
+  // through here and are refused the same way.
+  if (cfg.SEED_ADMIN_EMAIL === DEV_SEED_ADMIN_EMAIL) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SEED_ADMIN_EMAIL'],
+      message: 'must be set explicitly in production (the development demo address is refused)',
+    });
+  }
+
+  if (cfg.SEED_ADMIN_PASSWORD === DEV_SEED_ADMIN_PASSWORD) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SEED_ADMIN_PASSWORD'],
+      message: 'the development demo password must never reach production',
+    });
+  } else if (cfg.SEED_ADMIN_PASSWORD.length < PROD_SEED_ADMIN_MIN_LENGTH) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SEED_ADMIN_PASSWORD'],
+      message: `must be at least ${PROD_SEED_ADMIN_MIN_LENGTH} characters in production`,
+    });
+  }
 }
 
 const schema = z.object({
@@ -126,8 +164,8 @@ const schema = z.object({
   // 'local' serves the artwork from frontend/public; 'cloudinary' points the
   // catalogue at the uploads made by npm run seed:images.
   SEED_IMAGE_SOURCE: z.enum(['local', 'cloudinary']).default('local'),
-  SEED_ADMIN_EMAIL: z.string().email().default('admin@anahit-flower.am'),
-  SEED_ADMIN_PASSWORD: z.string().default('Admin123!'),
+  SEED_ADMIN_EMAIL: z.string().email().default(DEV_SEED_ADMIN_EMAIL),
+  SEED_ADMIN_PASSWORD: z.string().default(DEV_SEED_ADMIN_PASSWORD),
 
   /**
    * Escape hatch for a database on a private network: 'disabled' lets a plaintext

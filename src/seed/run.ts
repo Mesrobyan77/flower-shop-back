@@ -119,22 +119,28 @@ async function seedUsers() {
       phone: '+374 10 500 700',
       role: 'admin',
     });
-    logger.info(`Admin created: ${env.SEED_ADMIN_EMAIL} / ${env.SEED_ADMIN_PASSWORD}`);
+    // The password is a credential, never a log line - not even in development.
+    logger.info('Admin created', { email: env.SEED_ADMIN_EMAIL });
   }
 
-  const demoEmail = 'demo@anahit-flower.am';
-  if (!(await User.exists({ email: demoEmail }))) {
-    await User.create({
-      email: demoEmail,
-      password: 'Demo1234',
-      name: 'Անի Հակոբյան',
-      phone: '+374 99 123 456',
-      role: 'user',
-      points: 2000,
-      totalSpend: 120_000,
-      grade: 'sprout',
-    });
-    logger.info(`Demo customer created: ${demoEmail} / Demo1234`);
+  // The demo customer ships with a published password, so a production database
+  // must never receive the account at all: seeded reviews skip when the fixture
+  // is absent (see seedReviews).
+  if (!env.isProd) {
+    const demoEmail = 'demo@anahit-flower.am';
+    if (!(await User.exists({ email: demoEmail }))) {
+      await User.create({
+        email: demoEmail,
+        password: 'Demo1234',
+        name: 'Անի Հակոբյան',
+        phone: '+374 99 123 456',
+        role: 'user',
+        points: 2000,
+        totalSpend: 120_000,
+        grade: 'sprout',
+      });
+      logger.info('Demo customer created', { email: demoEmail });
+    }
   }
 }
 
