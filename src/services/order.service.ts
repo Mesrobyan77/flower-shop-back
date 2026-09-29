@@ -69,12 +69,27 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
 
   const user = ctx.userId ? await User.findById(ctx.userId) : null;
   const items: OrderItemSubdoc[] = [];
+  /**
+   * Stock is claimed per product, never per line: the same product can sit on
+   * several lines of one basket (different options, ribbon text or delivery slot)
+   * and only the sum of those lines has to be available.
+   */
+  const stockClaims = new Map<string, { quantity: number; trackStock: boolean; stock: number; name: string }>();
 
   for (const line of cart.items) {
     const product = line.product as unknown as ProductDocument | null;
     if (!product || !product.isActive) throw ApiError.badRequest('One of the products is no longer available');
-    if (product.trackStock && product.stock < line.quantity) {
-      throw ApiError.badRequest(`"${pickLocale(product.name, locale)}" does not have enough stock`);
+
+    const claim = stockClaims.get(String(product._id));
+    if (claim) {
+      claim.quantity += line.quantity;
+    } else {
+      stockClaims.set(String(product._id), {
+        quantity: line.quantity,
+        trackStock: product.trackStock,
+        stock: product.stock,
+        name: pickLocale(product.name, locale),
+      });
     }
 
     const optionDelta = line.options.reduce((acc, o) => acc + (o.priceDelta ?? 0), 0);
@@ -95,6 +110,17 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
     });
   }
 
+  /**
+   * Friendly pre-check against the snapshot the cart was populated with. It is
+   * advisory only - the authoritative guard is the conditional claim inside the
+   * transaction below, because this snapshot can be stale by the time we get there.
+   */
+  for (const claim of stockClaims.values()) {
+    if (claim.trackStock && claim.stock < claim.quantity) {
+      throw ApiError.badRequest(`"${claim.name}" does not have enough stock`);
+    }
+  }
+
   const merchandiseTotal = items.reduce((acc, i) => acc + i.lineTotal, 0);
   const deliveryQuote = quoteDelivery(input.delivery.method, input.delivery.region, merchandiseTotal);
 
@@ -108,7 +134,7 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
   });
 
   const order = await runInTransaction(async (session) => {
-    const opts = session ? { session } : {};
+    const opts = { session };
 
     const [doc] = await Order.create(
       [
@@ -141,9 +167,27 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
       opts,
     );
 
-    for (const item of items) {
-      await Product.updateOne({ _id: item.product }, { $inc: { soldCount: item.quantity } }, opts);
-      await Product.updateOne({ _id: item.product, trackStock: true }, { $inc: { stock: -item.quantity } }, opts);
+    /**
+     * Conditional claim: the availability check and the decrement are one atomic
+     * step, so two checkouts racing for the last unit can never both win. A
+     * product that is not stock-tracked only moves its sales counter.
+     */
+    for (const [productId, claim] of stockClaims) {
+      const claimed = await Product.updateOne(
+        { _id: productId, trackStock: true, stock: { $gte: claim.quantity } },
+        { $inc: { stock: -claim.quantity, soldCount: claim.quantity } },
+        opts,
+      );
+      if (claimed.matchedCount === 1) continue;
+
+      const untracked = await Product.updateOne(
+        { _id: productId, trackStock: { $ne: true } },
+        { $inc: { soldCount: claim.quantity } },
+        opts,
+      );
+      if (untracked.matchedCount !== 1) {
+        throw ApiError.conflict(`"${claim.name}" does not have enough stock`);
+      }
     }
 
     if (user && totals.pointsUsed > 0) {
