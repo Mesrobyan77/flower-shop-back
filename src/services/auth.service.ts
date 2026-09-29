@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { User, type UserDocument } from '../models/User';
 import { Cart } from '../models/Cart';
+import { RefreshSession } from '../models/RefreshSession';
 import { ApiError } from '../utils/ApiError';
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
+import { signAccessToken, signRefreshToken, tokenTtlMs, verifyRefreshToken } from '../utils/jwt';
 import { gradeByKey } from '../constants';
 
 export interface RegisterInput {
@@ -51,9 +53,30 @@ export function toPublicUser(user: UserDocument): PublicUser {
   };
 }
 
-function issueTokens(user: UserDocument) {
-  const identity = { id: String(user._id), email: user.email, role: user.role };
-  return { accessToken: signAccessToken(identity), refreshToken: signRefreshToken(identity) };
+function identityOf(user: UserDocument) {
+  return { id: String(user._id), email: user.email, role: user.role };
+}
+
+/**
+ * Signs both tokens and records the refresh session first: a token whose row
+ * could not be written is never handed out, and a hand without a row can never
+ * be refreshed. `familyId` links every rotation of one login so logout can
+ * revoke them together.
+ */
+async function issueSession(user: UserDocument, familyId: string = randomUUID()) {
+  const identity = identityOf(user);
+  const jti = randomUUID();
+  const accessToken = signAccessToken(identity);
+  const refreshToken = signRefreshToken(identity, { jti, fid: familyId });
+
+  await RefreshSession.create({
+    _id: jti,
+    familyId,
+    user: user._id,
+    expiresAt: new Date(Date.now() + tokenTtlMs(refreshToken)),
+  });
+
+  return { accessToken, refreshToken };
 }
 
 export async function register(input: RegisterInput, sessionId?: string): Promise<AuthResult> {
@@ -70,7 +93,7 @@ export async function register(input: RegisterInput, sessionId?: string): Promis
 
   if (sessionId) await mergeGuestCart(sessionId, String(user._id));
 
-  return { user: toPublicUser(user), ...issueTokens(user) };
+  return { user: toPublicUser(user), ...(await issueSession(user)) };
 }
 
 export async function login(email: string, password: string, sessionId?: string): Promise<AuthResult> {
@@ -86,14 +109,61 @@ export async function login(email: string, password: string, sessionId?: string)
 
   if (sessionId) await mergeGuestCart(sessionId, String(user._id));
 
-  return { user: toPublicUser(user), ...issueTokens(user) };
+  return { user: toPublicUser(user), ...(await issueSession(user)) };
 }
 
+/** Every unexpired row of one login, revoked in a single update. */
+async function revokeFamily(familyId: string, reason: 'logout' | 'account-disabled'): Promise<void> {
+  await RefreshSession.updateMany(
+    { familyId, revokedAt: null },
+    { $set: { revokedAt: new Date(), revokedReason: reason } },
+  );
+}
+
+/**
+ * Rotation with replay protection. The presented token is claimed in one
+ * atomic update (`usedAt: null` -> now), so of two concurrent refreshes
+ * carrying the same cookie exactly one can win; the loser - and anyone
+ * replaying a token that was already rotated or revoked - gets a plain 401
+ * and never a fresh session. The winner re-enters the same family under a
+ * new `jti`.
+ */
 export async function refresh(token: string): Promise<AuthResult> {
   const payload = verifyRefreshToken(token);
+  const jti = payload.jti;
+  const familyId = payload.fid;
+  if (!jti || !familyId) throw ApiError.unauthorized('Refresh token is invalid, please sign in again');
+
+  const claimed = await RefreshSession.findOneAndUpdate(
+    { _id: jti, familyId, usedAt: null, revokedAt: null, expiresAt: { $gt: new Date() } },
+    { $set: { usedAt: new Date() } },
+  );
+  if (!claimed) throw ApiError.unauthorized('Refresh token is invalid, please sign in again');
+
   const user = await User.findById(payload.sub);
-  if (!user || !user.isActive) throw ApiError.unauthorized('Account is no longer available');
-  return { user: toPublicUser(user), ...issueTokens(user) };
+  if (!user || !user.isActive) {
+    await revokeFamily(familyId, 'account-disabled');
+    throw ApiError.unauthorized('Account is no longer available');
+  }
+
+  return { user: toPublicUser(user), ...(await issueSession(user, familyId)) };
+}
+
+/**
+ * Ends the session the presented token belongs to. An absent, expired or
+ * otherwise unverifiable token simply skips the database - the caller still
+ * gets its cookie cleared, so logout never fails from the client's view.
+ */
+export async function logout(token?: string): Promise<void> {
+  if (!token) return;
+  let payload;
+  try {
+    payload = verifyRefreshToken(token);
+  } catch {
+    return;
+  }
+  if (!payload.fid) return;
+  await revokeFamily(payload.fid, 'logout');
 }
 
 export async function currentUser(userId: string): Promise<PublicUser> {

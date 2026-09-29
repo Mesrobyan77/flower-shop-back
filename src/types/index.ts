@@ -6,6 +6,10 @@ export interface AuthTokenPayload {
   role: UserRole;
   email: string;
   tokenType: 'access' | 'refresh';
+  /** Unique id of this refresh token's row - the single-use rotation key. */
+  jti?: string;
+  /** Session family every rotation of one login shares; logout revokes it. */
+  fid?: string;
 }
 
 export interface AuthedRequest extends Request {

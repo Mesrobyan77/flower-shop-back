@@ -24,6 +24,7 @@
     "db:indexes": "tsx src/scripts/syncIndexes.ts",
     "security:check": "tsx src/scripts/securityCheck.ts",
     "security:check:prod": "tsx src/scripts/securityCheck.ts --prod",
+    "refresh:tests": "tsx src/scripts/refreshTokenFlow.ts",
     "seed:images": "tsx src/scripts/uploadSeedImages.ts"
   },
   "dependencies": {

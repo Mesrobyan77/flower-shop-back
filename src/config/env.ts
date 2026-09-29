@@ -22,6 +22,19 @@ function usesEncryptedTransport(uri: string): boolean {
 }
 
 /**
+ * `jsonwebtoken` accepts `ms` durations (`15m`, `2h`, `30d`). Anything else -
+ * including a bare number whose unit is ambiguous - would only surface as a
+ * crash on the first login, so the shape is pinned at boot instead.
+ */
+const TTL_PATTERN = /^(?:\d+[smhd])+$/;
+
+const ttl = (fallback: string) =>
+  z
+    .string()
+    .regex(TTL_PATTERN, 'must be a duration like 15m, 2h or 30d')
+    .default(fallback);
+
+/**
  * Production-only refinements. Everything the shop cannot safely infer is stated
  * here so a misconfigured deployment fails at boot instead of running with a
  * published secret, a plaintext database connection or credential-less CORS.
@@ -88,9 +101,9 @@ const schema = z.object({
   MONGODB_DB: z.string().default('anahit_flower'),
 
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 chars'),
-  JWT_EXPIRES_IN: z.string().default('15m'),
+  JWT_EXPIRES_IN: ttl('15m'),
   JWT_REFRESH_SECRET: z.string().min(16, 'JWT_REFRESH_SECRET must be at least 16 chars'),
-  JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
+  JWT_REFRESH_EXPIRES_IN: ttl('30d'),
   COOKIE_DOMAIN: z.string().default('localhost'),
 
   // Media lives in Cloudinary. Left empty the API still boots on the seeded
