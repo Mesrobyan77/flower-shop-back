@@ -18,6 +18,8 @@
     "stock:concurrency:no-tx": "tsx src/scripts/stockConcurrency.ts --no-transactions",
     "points:concurrency": "tsx src/scripts/pointsConcurrency.ts",
     "points:concurrency:no-tx": "tsx src/scripts/pointsConcurrency.ts --no-transactions",
+    "idempotency:concurrency": "tsx src/scripts/idempotencyConcurrency.ts",
+    "idempotency:concurrency:no-tx": "tsx src/scripts/idempotencyConcurrency.ts --no-transactions",
     "mongo:local": "tsx src/scripts/localMongo.ts",
     "seed:images": "tsx src/scripts/uploadSeedImages.ts"
   },
