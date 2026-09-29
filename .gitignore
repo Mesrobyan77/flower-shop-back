@@ -6,3 +6,4 @@ dist/
 coverage/
 .cache/
 .mongo-data/
+.mongo-backups/
