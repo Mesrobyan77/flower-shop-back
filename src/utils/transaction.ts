@@ -1,15 +1,51 @@
 import mongoose, { type ClientSession } from 'mongoose';
 import { logger } from '../config/logger';
+import { ApiError } from './ApiError';
 
 let transactionsSupported: boolean | null = null;
 
 /**
- * Atlas (replica set) supports multi-document transactions; a standalone local
- * mongod does not. Run inside a transaction when possible and degrade to a plain
- * sequential write otherwise, so development against a single node still works.
+ * Only a replica set or a sharded cluster can run multi-document transactions:
+ * `hello` reports `setName` for the former and `msg: 'isdbgrid'` for the latter.
+ * A standalone mongod reports neither.
  */
-export async function runInTransaction<T>(fn: (session?: ClientSession) => Promise<T>): Promise<T> {
-  if (transactionsSupported === false) return fn(undefined);
+async function detectTransactions(): Promise<boolean> {
+  const admin = mongoose.connection.db?.admin();
+  if (!admin) return false;
+
+  try {
+    const info = (await admin.command({ hello: 1 })) as { setName?: string; msg?: string };
+    return Boolean(info.setName) || info.msg === 'isdbgrid';
+  } catch {
+    // MongoDB < 4.4 only knows the legacy name of the same command.
+    const info = (await admin.command({ isMaster: 1 })) as { setName?: string; msg?: string };
+    return Boolean(info.setName) || info.msg === 'isdbgrid';
+  }
+}
+
+/**
+ * Order writes touch several documents at once - order, stock, sales counters,
+ * bonus points and the cart - so they only ever run inside a transaction. A
+ * deployment that cannot provide one is refused outright instead of silently
+ * degrading to sequential writes: an order without its stock movement, or stock
+ * moved without an order, is worse for the shop than a failed request.
+ */
+export async function runInTransaction<T>(fn: (session: ClientSession) => Promise<T>): Promise<T> {
+  if (transactionsSupported === null) {
+    transactionsSupported = await detectTransactions();
+    if (!transactionsSupported) {
+      logger.error('MongoDB deployment cannot run transactions - order writes are refused');
+    }
+  }
+
+  if (!transactionsSupported) {
+    throw new ApiError(
+      503,
+      'Placing an order is temporarily unavailable: this database cannot guarantee atomic writes',
+      undefined,
+      'TRANSACTIONS_UNAVAILABLE',
+    );
+  }
 
   const session = await mongoose.startSession();
   try {
@@ -17,21 +53,7 @@ export async function runInTransaction<T>(fn: (session?: ClientSession) => Promi
     await session.withTransaction(async () => {
       result = await fn(session);
     });
-    transactionsSupported = true;
     return result;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const unsupported =
-      message.includes('Transaction numbers are only allowed') ||
-      message.includes('replica set') ||
-      message.includes('IllegalOperation');
-
-    if (unsupported && transactionsSupported === null) {
-      transactionsSupported = false;
-      logger.warn('MongoDB transactions unavailable on this deployment - falling back to non-atomic writes');
-      return fn(undefined);
-    }
-    throw err;
   } finally {
     await session.endSession();
   }

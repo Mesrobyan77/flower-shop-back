@@ -6,8 +6,8 @@ import { pickLocale } from '../models/common';
 import {
   CANCELLABLE_STATUSES,
   DEFAULT_LOCALE,
+  MEMBER_GRADES,
   ORDER_STATUS_FLOW,
-  gradeForSpend,
   type DeliveryMethod,
   type Locale,
   type OrderStatus,
@@ -69,12 +69,27 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
 
   const user = ctx.userId ? await User.findById(ctx.userId) : null;
   const items: OrderItemSubdoc[] = [];
+  /**
+   * Stock is claimed per product, never per line: the same product can sit on
+   * several lines of one basket (different options, ribbon text or delivery slot)
+   * and only the sum of those lines has to be available.
+   */
+  const stockClaims = new Map<string, { quantity: number; trackStock: boolean; stock: number; name: string }>();
 
   for (const line of cart.items) {
     const product = line.product as unknown as ProductDocument | null;
     if (!product || !product.isActive) throw ApiError.badRequest('One of the products is no longer available');
-    if (product.trackStock && product.stock < line.quantity) {
-      throw ApiError.badRequest(`"${pickLocale(product.name, locale)}" does not have enough stock`);
+
+    const claim = stockClaims.get(String(product._id));
+    if (claim) {
+      claim.quantity += line.quantity;
+    } else {
+      stockClaims.set(String(product._id), {
+        quantity: line.quantity,
+        trackStock: product.trackStock,
+        stock: product.stock,
+        name: pickLocale(product.name, locale),
+      });
     }
 
     const optionDelta = line.options.reduce((acc, o) => acc + (o.priceDelta ?? 0), 0);
@@ -95,6 +110,17 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
     });
   }
 
+  /**
+   * Friendly pre-check against the snapshot the cart was populated with. It is
+   * advisory only - the authoritative guard is the conditional claim inside the
+   * transaction below, because this snapshot can be stale by the time we get there.
+   */
+  for (const claim of stockClaims.values()) {
+    if (claim.trackStock && claim.stock < claim.quantity) {
+      throw ApiError.badRequest(`"${claim.name}" does not have enough stock`);
+    }
+  }
+
   const merchandiseTotal = items.reduce((acc, i) => acc + i.lineTotal, 0);
   const deliveryQuote = quoteDelivery(input.delivery.method, input.delivery.region, merchandiseTotal);
 
@@ -108,7 +134,7 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
   });
 
   const order = await runInTransaction(async (session) => {
-    const opts = session ? { session } : {};
+    const opts = { session };
 
     const [doc] = await Order.create(
       [
@@ -141,13 +167,43 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
       opts,
     );
 
-    for (const item of items) {
-      await Product.updateOne({ _id: item.product }, { $inc: { soldCount: item.quantity } }, opts);
-      await Product.updateOne({ _id: item.product, trackStock: true }, { $inc: { stock: -item.quantity } }, opts);
+    /**
+     * Conditional claim: the availability check and the decrement are one atomic
+     * step, so two checkouts racing for the last unit can never both win. A
+     * product that is not stock-tracked only moves its sales counter.
+     */
+    for (const [productId, claim] of stockClaims) {
+      const claimed = await Product.updateOne(
+        { _id: productId, trackStock: true, stock: { $gte: claim.quantity } },
+        { $inc: { stock: -claim.quantity, soldCount: claim.quantity } },
+        opts,
+      );
+      if (claimed.matchedCount === 1) continue;
+
+      const untracked = await Product.updateOne(
+        { _id: productId, trackStock: { $ne: true } },
+        { $inc: { soldCount: claim.quantity } },
+        opts,
+      );
+      if (untracked.matchedCount !== 1) {
+        throw ApiError.conflict(`"${claim.name}" does not have enough stock`);
+      }
     }
 
     if (user && totals.pointsUsed > 0) {
-      await User.updateOne({ _id: user._id }, { $inc: { points: -totals.pointsUsed } }, opts);
+      /**
+       * Conditional claim: the balance check and the deduction are one atomic step,
+       * so two orders can never spend the same bonus twice and the balance can never
+       * be driven negative.
+       */
+      const spent = await User.updateOne(
+        { _id: user._id, points: { $gte: totals.pointsUsed } },
+        { $inc: { points: -totals.pointsUsed } },
+        opts,
+      );
+      if (spent.matchedCount !== 1) {
+        throw ApiError.conflict('Your bonus balance changed while the order was being placed - please try again');
+      }
     }
 
     await Cart.updateOne({ _id: cart._id }, { $set: { items: [] } }, opts);
@@ -157,58 +213,99 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
   return order;
 }
 
-/** Admin status moves follow the reference workflow and cannot skip backwards. */
+/**
+ * The completion reward as one aggregation-pipeline update: the increments and the
+ * grade derived from the freshly incremented lifetime spend are applied together,
+ * so two orders completing at the same time cannot lose an increment and the grade
+ * can never be computed from a stale total (needs MongoDB 4.2+).
+ */
+function completionReward(pointsEarned: number, total: number) {
+  const branches = [...MEMBER_GRADES]
+    .sort((a, b) => b.minSpend - a.minSpend)
+    .filter((grade) => grade.minSpend > 0)
+    .map((grade) => ({ case: { $gte: ['$totalSpend', grade.minSpend] }, then: grade.key }));
+
+  return [
+    {
+      $set: {
+        points: { $add: [{ $ifNull: ['$points', 0] }, pointsEarned] },
+        totalSpend: { $add: [{ $ifNull: ['$totalSpend', 0] }, total] },
+      },
+    },
+    { $set: { grade: { $switch: { branches, default: MEMBER_GRADES[0].key } } } },
+  ];
+}
+
+/**
+ * Admin status moves follow the reference workflow and cannot skip backwards.
+ *
+ * The move is claimed with a compare-and-set on the status the caller saw, so of
+ * any concurrent or repeated attempts exactly one runs the side effects below:
+ * completion cannot credit the reward twice and cancellation cannot refund twice.
+ * The whole move runs in a transaction - order, stock and bonus balance either all
+ * move together or none of them does.
+ */
 export async function changeStatus(
   orderId: string,
   next: OrderStatus,
   actorId?: string,
   note?: string,
 ): Promise<OrderDocument> {
-  const order = await Order.findById(orderId);
-  if (!order) throw ApiError.notFound('Order not found');
+  return runInTransaction(async (session) => {
+    const opts = { session };
 
-  const allowed = ORDER_STATUS_FLOW[order.status];
-  if (!allowed.includes(next)) {
-    throw ApiError.badRequest(`Cannot move an order from "${order.status}" to "${next}"`);
-  }
+    const order = await Order.findById(orderId, null, opts);
+    if (!order) throw ApiError.notFound('Order not found');
 
-  order.status = next;
-  order.statusHistory.push({ status: next, note, changedBy: actorId as never, changedAt: new Date() });
+    const previous = order.status;
+    if (!ORDER_STATUS_FLOW[previous].includes(next)) {
+      throw ApiError.badRequest(`Cannot move an order from "${previous}" to "${next}"`);
+    }
 
-  if (next === 'delivered') {
-    order.delivery.deliveredAt = new Date();
-    // Cash on delivery: money changes hands exactly at delivery.
-    order.paymentStatus = 'paid';
-    order.paidAt = new Date();
-  }
+    const patch: Record<string, unknown> = { status: next };
+    if (next === 'delivered') {
+      patch['delivery.deliveredAt'] = new Date();
+      // Cash on delivery: money changes hands exactly at delivery.
+      patch.paymentStatus = 'paid';
+      patch.paidAt = new Date();
+    }
+    if (next === 'completed') patch.completedAt = new Date();
+    if (next === 'cancelled') {
+      patch.paymentStatus = 'pending';
+      patch.cancelReason = note;
+    }
 
-  if (next === 'completed') {
-    order.completedAt = new Date();
-    if (order.user) {
-      const user = await User.findById(order.user);
-      if (user) {
-        user.points += order.pointsEarned;
-        user.totalSpend += order.total;
-        user.grade = gradeForSpend(user.totalSpend).key;
-        await user.save();
+    const claimed = await Order.findOneAndUpdate(
+      { _id: orderId, status: previous },
+      {
+        $set: patch,
+        $push: { statusHistory: { status: next, note, changedBy: actorId as never, changedAt: new Date() } },
+      },
+      { new: true, session },
+    );
+
+    if (!claimed) {
+      throw ApiError.conflict('This order changed while the request was being handled - reload it and try again');
+    }
+
+    if (next === 'completed' && claimed.user) {
+      await User.updateOne({ _id: claimed.user }, completionReward(claimed.pointsEarned, claimed.total), opts);
+    }
+
+    if (next === 'cancelled') {
+      for (const item of claimed.items) {
+        await Product.updateOne({ _id: item.product }, { $inc: { soldCount: -item.quantity } }, opts);
+        await Product.updateOne({ _id: item.product, trackStock: true }, { $inc: { stock: item.quantity } }, opts);
+      }
+
+      // Only the winner of the status claim gets here, so the refund lands once.
+      if (claimed.user && claimed.pointsUsed > 0) {
+        await User.updateOne({ _id: claimed.user }, { $inc: { points: claimed.pointsUsed } }, opts);
       }
     }
-  }
 
-  if (next === 'cancelled') {
-    order.paymentStatus = 'pending';
-    order.cancelReason = note;
-    for (const item of order.items) {
-      await Product.updateOne({ _id: item.product }, { $inc: { soldCount: -item.quantity } });
-      await Product.updateOne({ _id: item.product, trackStock: true }, { $inc: { stock: item.quantity } });
-    }
-    if (order.user && order.pointsUsed > 0) {
-      await User.updateOne({ _id: order.user }, { $inc: { points: order.pointsUsed } });
-    }
-  }
-
-  await order.save();
-  return order;
+    return claimed;
+  });
 }
 
 export async function setPaymentStatus(orderId: string, status: 'pending' | 'paid' | 'refunded') {

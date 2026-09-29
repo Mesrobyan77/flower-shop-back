@@ -12,7 +12,12 @@
     "seed:fresh": "tsx src/seed/index.ts --fresh",
     "typecheck": "tsc --noEmit",
     "dev:memory": "tsx src/scripts/devServer.ts",
+    "dev:memory:standalone": "tsx src/scripts/devServer.ts --standalone",
     "smoke": "tsx src/scripts/smoke.ts",
+    "stock:concurrency": "tsx src/scripts/stockConcurrency.ts",
+    "stock:concurrency:no-tx": "tsx src/scripts/stockConcurrency.ts --no-transactions",
+    "points:concurrency": "tsx src/scripts/pointsConcurrency.ts",
+    "points:concurrency:no-tx": "tsx src/scripts/pointsConcurrency.ts --no-transactions",
     "mongo:local": "tsx src/scripts/localMongo.ts",
     "seed:images": "tsx src/scripts/uploadSeedImages.ts"
   },
