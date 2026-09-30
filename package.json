@@ -20,6 +20,7 @@
     "points:concurrency:no-tx": "tsx src/scripts/pointsConcurrency.ts --no-transactions",
     "idempotency:concurrency": "tsx src/scripts/idempotencyConcurrency.ts",
     "idempotency:concurrency:no-tx": "tsx src/scripts/idempotencyConcurrency.ts --no-transactions",
+    "cart:concurrency": "tsx src/scripts/cartConcurrency.ts",
     "mongo:local": "tsx src/scripts/localMongo.ts",
     "db:indexes": "tsx src/scripts/syncIndexes.ts",
     "db:backup": "tsx src/scripts/dbBackup.ts",
