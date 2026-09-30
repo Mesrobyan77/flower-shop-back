@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as admin from '../controllers/admin.controller';
 import * as adminCatalog from '../controllers/admin.catalog.controller';
 import { requireAuth, requireRole } from '../middlewares/auth';
+import { writeLimiter } from '../middlewares/rateLimit';
 import { upload } from '../middlewares/upload';
 import { validate } from '../middlewares/validate';
 import {
@@ -76,7 +77,7 @@ router.post('/inquiries/:id/answer', validate({ params: idParam, body: answerInq
 
 /* media */
 router.get('/media', admin.listMedia);
-router.post('/media/upload', upload.array('files', 10), admin.upload);
+router.post('/media/upload', writeLimiter, upload.array('files', 10), admin.upload);
 router.delete('/media/:id', validate({ params: idParam }), admin.removeMedia);
 
 /* settings */

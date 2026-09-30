@@ -32,11 +32,55 @@ function ownerFilter(owner: CartOwner) {
   throw ApiError.badRequest('Cart owner could not be determined');
 }
 
+/**
+ * Narrow duplicate-key detector for the ownership race (checkpoint E6.1).
+ *
+ * `Cart.create` inside `getOrCreateCart` can only trip a unique constraint on
+ * one of the two ownership indexes (`user_1` / `sessionId_1`) - never on the
+ * item subdocuments. Anything that is not a MongoDB duplicate-key error
+ * (server error code 11000) is never treated as this race and falls through
+ * to the caller unchanged.
+ */
+function isDuplicateKeyError(error: unknown): error is { code: number; keyPattern?: Record<string, unknown> } {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 11000;
+}
+
+/**
+ * Get the owner's cart, creating it on first touch.
+ *
+ * Creation is safe under concurrent first touch: two requests can both miss
+ * the `findOne`, but the ownership unique index lets exactly one `create`
+ * through (checkpoint E6.1). The loser adopts the winner's cart via a narrow
+ * E11000 recovery (see catch block) instead of inserting a second cart - so a
+ * basket can never be split across duplicate carts for one owner.
+ */
 export async function getOrCreateCart(owner: CartOwner): Promise<CartDocument> {
   const filter = ownerFilter(owner);
   const existing = await Cart.findOne(filter);
   if (existing) return existing;
-  return Cart.create({ ...filter, items: [] });
+
+  try {
+    return await Cart.create({ ...filter, items: [] });
+  } catch (error) {
+    // Concurrent first touch: another request for the SAME owner created the
+    // cart between the findOne above and this insert, and the ownership unique
+    // index rejected ours with E11000. The recovery is deliberately narrow:
+    //   1. it must be a duplicate-key error (code 11000), and
+    //   2. when the server reports the failing key, it must name this owner's
+    //      ownership field (`user` vs `sessionId`), and
+    //   3. a deterministic re-read of the exact owner filter must find the
+    //      winner's cart - otherwise the original error is rethrown.
+    // Every unrelated error (validation, connection, E11000 on another key)
+    // propagates untouched; a second cart is never created here.
+    if (isDuplicateKeyError(error)) {
+      const ownershipField = 'user' in filter ? 'user' : 'sessionId';
+      if (!error.keyPattern || ownershipField in error.keyPattern) {
+        const winner = await Cart.findOne(filter);
+        if (winner) return winner;
+      }
+    }
+    throw error;
+  }
 }
 
 /**

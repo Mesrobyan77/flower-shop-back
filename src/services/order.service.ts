@@ -136,6 +136,22 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
   const order = await runInTransaction(async (session) => {
     const opts = { session };
 
+    /**
+     * The basket is consumed before anything else is created, and the emptiness
+     * check and the emptying are one single-document update: of any number of
+     * concurrent submissions of the same cart exactly one matches, so exactly one
+     * goes on to create an order. A later step failing rolls the transaction back
+     * and leaves the basket intact for the customer to retry.
+     */
+    const consumed = await Cart.updateOne(
+      { _id: cart._id, 'items.0': { $exists: true } },
+      { $set: { items: [] } },
+      opts,
+    );
+    if (consumed.matchedCount !== 1) {
+      throw ApiError.conflict('This basket has already been checked out - refresh and try again');
+    }
+
     const [doc] = await Order.create(
       [
         {
@@ -206,7 +222,6 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
       }
     }
 
-    await Cart.updateOne({ _id: cart._id }, { $set: { items: [] } }, opts);
     return doc;
   });
 
@@ -294,7 +309,15 @@ export async function changeStatus(
 
     if (next === 'cancelled') {
       for (const item of claimed.items) {
-        await Product.updateOne({ _id: item.product }, { $inc: { soldCount: -item.quantity } }, opts);
+        /**
+         * Guarded so the counter can never go negative; the stock restore below only
+         * adds units, so it needs no guard of its own.
+         */
+        await Product.updateOne(
+          { _id: item.product, soldCount: { $gte: item.quantity } },
+          { $inc: { soldCount: -item.quantity } },
+          opts,
+        );
         await Product.updateOne({ _id: item.product, trackStock: true }, { $inc: { stock: item.quantity } }, opts);
       }
 

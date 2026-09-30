@@ -18,7 +18,16 @@
     "stock:concurrency:no-tx": "tsx src/scripts/stockConcurrency.ts --no-transactions",
     "points:concurrency": "tsx src/scripts/pointsConcurrency.ts",
     "points:concurrency:no-tx": "tsx src/scripts/pointsConcurrency.ts --no-transactions",
+    "idempotency:concurrency": "tsx src/scripts/idempotencyConcurrency.ts",
+    "idempotency:concurrency:no-tx": "tsx src/scripts/idempotencyConcurrency.ts --no-transactions",
+    "cart:concurrency": "tsx src/scripts/cartConcurrency.ts",
     "mongo:local": "tsx src/scripts/localMongo.ts",
+    "db:indexes": "tsx src/scripts/syncIndexes.ts",
+    "db:backup": "tsx src/scripts/dbBackup.ts",
+    "db:restore": "tsx src/scripts/dbRestore.ts",
+    "security:check": "tsx src/scripts/securityCheck.ts",
+    "security:check:prod": "tsx src/scripts/securityCheck.ts --prod",
+    "refresh:tests": "tsx src/scripts/refreshTokenFlow.ts",
     "seed:images": "tsx src/scripts/uploadSeedImages.ts"
   },
   "dependencies": {

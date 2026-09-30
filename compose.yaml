@@ -1,0 +1,90 @@
+# Production composition for the Anahit Flower stack (E5).
+#
+# Scope: the two application services only. MongoDB stays on Atlas (external) and
+# media stays on Cloudinary, so there is no database container and no volume - both
+# services are stateless and can be replaced or scaled freely.
+#
+# Run it from THIS repository (the storefront is a sibling checkout):
+#   export NEXT_PUBLIC_API_URL=https://shop.example.com/api
+#   export NEXT_PUBLIC_SITE_URL=https://shop.example.com
+#   docker compose up -d --build
+#
+# API configuration comes from its own gitignored `.env`. With NODE_ENV=production the
+# API refuses placeholder secrets, the development demo admin pair and a plaintext
+# database URI, so a careless file fails closed instead of running.
+#
+# Neither service is exposed to the public internet: both publish on loopback for a
+# TLS-terminating reverse proxy running on the host. A proxy that runs as a container
+# should join the `edge` network and use the service names instead of these ports.
+#
+# Health checks are the ones baked into the images (Dockerfile HEALTHCHECK), so
+# `docker compose ps` reports health without duplicating the probes here.
+
+name: anahit-flower
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: anahit-flower-api:local
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: '5000'
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Loopback only: the reverse proxy terminates TLS and forwards here.
+    ports:
+      - '127.0.0.1:5000:5000'
+    # Enable once a container run has been observed to work without capabilities
+    # (the checkpoint environment had no engine, so this is unverified):
+    # cap_drop:
+    #   - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    networks:
+      - edge
+
+  web:
+    build:
+      context: ../flower-shop-front
+      dockerfile: Dockerfile
+      args:
+        # Inlined into the client bundle at build time, so a missing value must stop
+        # the build instead of shipping a bundle that calls localhost.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?export NEXT_PUBLIC_API_URL (for example https://shop.example.com/api) before building}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?export NEXT_PUBLIC_SITE_URL (for example https://shop.example.com) before building}
+    image: anahit-flower-web:local
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - '127.0.0.1:3000:3000'
+    # Not `read_only`: Next.js writes incremental-rendering and image-cache files
+    # under .next/cache at runtime (owned by the `node` user inside the image).
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+    networks:
+      - edge
+
+networks:
+  # Dedicated private bridge: the services reach each other by name and nothing else
+  # can join implicitly. It must not be `internal` - the API needs egress to Atlas and
+  # Cloudinary.
+  edge:
+    driver: bridge

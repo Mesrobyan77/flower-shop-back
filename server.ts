@@ -24,7 +24,19 @@ async function bootstrap() {
 
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
-  process.on('unhandledRejection', (reason) => logger.error('Unhandled rejection', String(reason)));
+  /**
+   * Fatal errors are logged and then end the process: Node's own default for both
+   * events is to tear down, and a shop must never keep serving from a state it can
+   * no longer trust. Exiting non-zero lets the deployment restart a clean process.
+   */
+  process.on('uncaughtException', (err) => {
+    logger.error('Uncaught exception - exiting', err instanceof Error ? err.stack : String(err));
+    process.exit(1);
+  });
+  process.on('unhandledRejection', (reason) => {
+    logger.error('Unhandled rejection - exiting', reason instanceof Error ? reason.stack : String(reason));
+    process.exit(1);
+  });
 }
 
 bootstrap().catch((err) => {
