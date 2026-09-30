@@ -86,6 +86,9 @@ const timeGroup = {
 };
 
 async function wipe() {
+  if (env.isProd) {
+    logger.warn('DESTRUCTIVE RUN: deleting all seeded collections in production (--fresh --yes)');
+  }
   logger.warn('Dropping existing collections (--fresh)');
   await Promise.all([
     Address.deleteMany({}),
@@ -349,11 +352,28 @@ async function refreshCategoryCounts() {
 
 export interface SeedOptions {
   fresh?: boolean;
+  /**
+   * `--yes`: explicit acknowledgement for the destructive `--fresh` path.
+   * Production refuses a wipe without it.
+   */
+  confirmDestructive?: boolean;
 }
 
 /** Idempotent: safe to run repeatedly. Passing fresh:true drops existing documents first. */
 export async function runSeed(options: SeedOptions = {}) {
-  if (options.fresh) await wipe();
+  if (options.fresh) {
+    /**
+     * Fail closed: `--fresh` empties every collection it finds, so a production run
+     * has to be confirmed on the command line (`--yes`) and can never be triggered by
+     * a stale script or a muscle-memory command.
+     */
+    if (env.isProd && !options.confirmDestructive) {
+      throw new Error(
+        'Refusing --fresh in production: it deletes all seeded collections. Re-run with --yes once a backup exists.',
+      );
+    }
+    await wipe();
+  }
 
   await seedUsers();
   const categoryIds = await seedCategoryTree();
