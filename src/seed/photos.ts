@@ -496,6 +496,25 @@ export function createSeedAssets(): SeedAssets {
     });
   }
 
+  /**
+   * The admin API can hiccup mid-seed (throttling/bursts); a false "missing"
+   * would force pointless re-downloads, so only a real 404 short-circuits and
+   * transient errors get a couple of retries.
+   */
+  async function lookupAsset(publicId: string): Promise<UploadApiResponse | null> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await cloudinary.api.resource(publicId, { resource_type: 'image' });
+      } catch (error) {
+        const err = error as { http_code?: number; error?: { http_code?: number; message?: string }; message?: string };
+        const code = err.http_code ?? err.error?.http_code;
+        if (code === 404 || /not found/i.test(err.error?.message ?? err.message ?? '')) return null;
+        if (attempt < 2) await sleep(3000 * (attempt + 1));
+      }
+    }
+    return null;
+  }
+
   function mimeFromFormat(format?: string): string {
     return format === 'jpg' ? 'image/jpeg' : `image/${format ?? 'jpeg'}`;
   }
@@ -513,9 +532,7 @@ export function createSeedAssets(): SeedAssets {
     const publicId = `${scopedFolder(SEED_FOLDER)}/pexels-${externalId}`;
 
     // A previous run may have uploaded the asset before the DB was reset.
-    let asset = await cloudinary.api
-      .resource(publicId, { resource_type: 'image' })
-      .catch(() => null);
+    let asset = await lookupAsset(publicId);
 
     if (asset) {
       stats.assetsReused += 1;
@@ -578,9 +595,7 @@ export function createSeedAssets(): SeedAssets {
     }
 
     // A previous run may have uploaded the asset before the DB was reset.
-    let asset = await cloudinary.api
-      .resource(publicId, { resource_type: 'image' })
-      .catch(() => null);
+    let asset = await lookupAsset(publicId);
 
     if (asset) {
       stats.tfAssetsReused += 1;
