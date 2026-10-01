@@ -14,7 +14,7 @@ export interface RefreshSessionDocument extends Document<string> {
   user: Types.ObjectId;
   usedAt: Date | null;
   revokedAt: Date | null;
-  revokedReason?: 'logout' | 'account-disabled';
+  revokedReason?: 'logout' | 'account-disabled' | 'password-change';
   expiresAt: Date;
 }
 
@@ -27,7 +27,7 @@ const refreshSessionSchema = new Schema<RefreshSessionDocument>(
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     usedAt: { type: Date, default: null },
     revokedAt: { type: Date, default: null },
-    revokedReason: { type: String, enum: ['logout', 'account-disabled'] },
+    revokedReason: { type: String, enum: ['logout', 'account-disabled', 'password-change'] },
     /** Mirrors the JWT exp so MongoDB purges the row the moment the token dies. */
     expiresAt: { type: Date, required: true, expires: 0 },
   },

@@ -13,6 +13,9 @@ export function createApp(): Express {
   const app = express();
 
   app.set('trust proxy', 1);
+  // Flat-string query params only: object/array params (the MongoDB operator
+  // injection vector) never reach controllers, validated routes or not.
+  app.set('query parser', 'simple');
 
   app.use(
     helmet({

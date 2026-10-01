@@ -50,6 +50,61 @@ const ttl = (fallback: string) =>
  * published secret, a plaintext database connection or credential-less CORS.
  * Messages name the variable but never echo its value.
  */
+/**
+ * Payment providers are optional integrations. Leaving every variable of a
+ * provider empty simply removes it from checkout; filling in *some* of its
+ * variables is a configuration mistake that would otherwise surface as a
+ * mysterious runtime failure, so it fails loudly at boot instead. Silent
+ * half-configuration is exactly what produces "paid" orders nobody can verify.
+ */
+function paymentProviderIssues(
+  cfg: {
+    NODE_ENV: string;
+    APP_FRONTEND_URL: string;
+    IDRAM_REC_ACCOUNT: string;
+    IDRAM_SECRET_KEY: string;
+    ARCA_USERNAME: string;
+    ARCA_PASSWORD: string;
+  },
+  ctx: z.RefinementCtx,
+) {
+  const providers = [
+    { name: 'Idram', keys: ['IDRAM_REC_ACCOUNT', 'IDRAM_SECRET_KEY'] as const },
+    { name: 'ArCa', keys: ['ARCA_USERNAME', 'ARCA_PASSWORD'] as const },
+  ];
+
+  let anyEnabled = false;
+  for (const provider of providers) {
+    const filled = provider.keys.filter((key) => cfg[key].trim() !== '');
+    if (filled.length === provider.keys.length) {
+      anyEnabled = true;
+      continue;
+    }
+    if (filled.length > 0) {
+      for (const key of provider.keys) {
+        if (cfg[key].trim() === '') {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${provider.name} is partially configured - set all of ${provider.keys.join(', ')} or none of them`,
+          });
+        }
+      }
+    }
+  }
+
+  // A return URL pointing at the developer's laptop is a false return URL in
+  // production: the shopper would land nowhere after paying. Only enforced
+  // while an online provider is actually offered.
+  if (cfg.NODE_ENV === 'production' && anyEnabled && /(^|\/\/)(localhost|127\.0\.0\.1)/.test(cfg.APP_FRONTEND_URL)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['APP_FRONTEND_URL'],
+      message: 'must be the public storefront origin in production while online payments are enabled',
+    });
+  }
+}
+
 function productionIssues(
   cfg: {
     NODE_ENV: string;
@@ -172,7 +227,31 @@ const schema = z.object({
    * mongodb:// URI through in production. Absent, production demands encryption.
    */
   MONGODB_TLS: z.enum(['disabled']).optional(),
-}).superRefine(productionIssues);
+
+  // Public origin of the storefront. Payment return URLs are built from this,
+  // so it must be the address the shopper's browser can actually reach.
+  APP_FRONTEND_URL: z.string().url().default('http://localhost:3000'),
+
+  // Idram merchant interface: EDP_REC_ACCOUNT (merchant ID), the SECRET_KEY
+  // Idram issues for checksum verification, and the hosted payment page.
+  // SUCCESS_URL / FAIL_URL / RESULT_URL are registered on Idram's side.
+  IDRAM_REC_ACCOUNT: z.string().default(''),
+  IDRAM_SECRET_KEY: z.string().default(''),
+  IDRAM_PAYMENT_URL: z.string().url().default('https://money.idram.am/payment.aspx'),
+
+  // ArCa iPay REST (Compass Plus EPG). The test host is the default so a
+  // development machine can never hit the live gateway by omission.
+  ARCA_API_BASE_URL: z.string().url().default('https://ipaytest.arca.am:8445/payment/rest'),
+  ARCA_USERNAME: z.string().default(''),
+  ARCA_PASSWORD: z.string().default(''),
+  // iPay expects the amount in the currency's minor denomination. AMD's minor
+  // unit is the luma, so 1000 AMD is sent as 100000; a bank that settles in
+  // whole drams sets this to 1.
+  ARCA_AMOUNT_MULTIPLIER: z.enum(['1', '100']).default('100'),
+}).superRefine((cfg, ctx) => {
+  productionIssues(cfg, ctx);
+  paymentProviderIssues(cfg, ctx);
+});
 
 const parsed = schema.safeParse(process.env);
 
@@ -190,6 +269,27 @@ export const env = {
   corsOrigins: parsed.data.CORS_ORIGINS.split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+  /**
+   * Provider settings resolved once at boot. `enabled` is the only thing the
+   * checkout surface consults: no credentials, no tab - and the API answers a
+   * clear 503 instead of ever pretending a payment succeeded.
+   */
+  payments: {
+    appFrontendUrl: parsed.data.APP_FRONTEND_URL.replace(/\/+$/, ''),
+    idram: {
+      enabled: parsed.data.IDRAM_REC_ACCOUNT.trim() !== '' && parsed.data.IDRAM_SECRET_KEY.trim() !== '',
+      recAccount: parsed.data.IDRAM_REC_ACCOUNT.trim(),
+      secretKey: parsed.data.IDRAM_SECRET_KEY.trim(),
+      paymentUrl: parsed.data.IDRAM_PAYMENT_URL,
+    },
+    arca: {
+      enabled: parsed.data.ARCA_USERNAME.trim() !== '' && parsed.data.ARCA_PASSWORD.trim() !== '',
+      apiBaseUrl: parsed.data.ARCA_API_BASE_URL.replace(/\/+$/, ''),
+      username: parsed.data.ARCA_USERNAME.trim(),
+      password: parsed.data.ARCA_PASSWORD,
+      amountMultiplier: Number(parsed.data.ARCA_AMOUNT_MULTIPLIER),
+    },
+  },
 };
 
 export type Env = typeof env;

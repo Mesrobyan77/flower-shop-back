@@ -1,26 +1,32 @@
 /* eslint-disable no-console */
+import mongoose, { type Model } from 'mongoose';
 import { env } from '../config/env';
-import { seedImage } from './images';
 import { logger } from '../config/logger';
 import {
   Address,
+  Cart,
   Category,
   Collection,
   Inquiry,
+  Media,
   Order,
+  Payment,
   Post,
   Product,
+  RefreshSession,
   Review,
   Setting,
   Subscription,
   SubscriptionPlan,
   User,
-  Cart,
 } from '../models';
-import { generateSku } from '../utils/codes';
+import { skuFromSlug } from '../utils/codes';
 import { seedCategories, seedCollections } from './data/categories';
 import { seedPosts, seedPlans, seedSettings } from './data/content';
-import { candyAddon, chocolateAddon, commonOptionGroups, seedProducts, sizeOption } from './data/products';
+import { candyAddon, chocolateAddon, commonOptionGroups, seedProducts, sizeOption, type SeedProduct } from './data/products';
+import { tfSeedProducts } from './data/tf-products';
+import { createSeedAssets, isOurCloudinaryUrl, type SeedAssets } from './photos';
+import type { ProductImage } from '../models/Product';
 import type { DeliveryMethod } from '../constants';
 
 const deliveryGroup = (methods: DeliveryMethod[]) => ({
@@ -85,26 +91,34 @@ const timeGroup = {
   options: [],
 };
 
+const ALL_MODELS = [
+  Address,
+  Cart,
+  Category,
+  Collection,
+  Inquiry,
+  Media,
+  Order,
+  Payment,
+  Post,
+  Product,
+  RefreshSession,
+  Review,
+  Setting,
+  Subscription,
+  SubscriptionPlan,
+  User,
+];
+
 async function wipe() {
+  // Fail closed at the lowest level too: no code path may drop a production DB.
   if (env.isProd) {
-    logger.warn('DESTRUCTIVE RUN: deleting all seeded collections in production (--fresh --yes)');
+    throw new Error('Refusing to drop the database in production.');
   }
-  logger.warn('Dropping existing collections (--fresh)');
-  await Promise.all([
-    Address.deleteMany({}),
-    Cart.deleteMany({}),
-    Category.deleteMany({}),
-    Collection.deleteMany({}),
-    Inquiry.deleteMany({}),
-    Order.deleteMany({}),
-    Post.deleteMany({}),
-    Product.deleteMany({}),
-    Review.deleteMany({}),
-    Setting.deleteMany({}),
-    Subscription.deleteMany({}),
-    SubscriptionPlan.deleteMany({}),
-    User.deleteMany({}),
-  ]);
+  logger.warn('Dropping the development database (SEED_RESET)');
+  await mongoose.connection.dropDatabase();
+  // The drop takes the indexes with it; rebuild them for every model.
+  await Promise.all(ALL_MODELS.map((model) => model.syncIndexes()));
 }
 
 async function seedUsers() {
@@ -147,7 +161,7 @@ async function seedUsers() {
   }
 }
 
-async function seedCategoryTree() {
+async function seedCategoryTree(assets: SeedAssets) {
   const byCode = new Map<string, { id: unknown; ancestors: unknown[]; depth: number }>();
 
   const sorted = [...seedCategories].sort((a, b) => a.code.length - b.code.length);
@@ -156,6 +170,7 @@ async function seedCategoryTree() {
     const parent = item.parentCode ? byCode.get(item.parentCode) : undefined;
     const ancestors = parent ? [...parent.ancestors, parent.id] : [];
     const depth = parent ? parent.depth + 1 : 0;
+    const image = (await assets.resolve(`cat-${item.slug}`)).url;
 
     const doc = await Category.findOneAndUpdate(
       { code: item.code },
@@ -170,7 +185,7 @@ async function seedCategoryTree() {
         icon: item.icon,
         isActive: true,
         showInNav: item.showInNav ?? depth === 0,
-        image: seedImage(`cat-${item.slug}`),
+        image,
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
@@ -181,10 +196,68 @@ async function seedCategoryTree() {
   return byCode;
 }
 
-async function seedCatalog(categoryIds: Map<string, { id: unknown; ancestors: unknown[] }>) {
+/** Every image that could not be imported from its source page; reported at the end of the run. */
+const imageFailures: { product: string; source: string; error: string }[] = [];
+
+/**
+ * Imported products try their own source-page images first: download ->
+ * temporary buffer -> our Cloudinary -> Media. A product whose images all fail
+ * falls back to the documented Pexels pipeline; a product with some successes
+ * keeps only those, so a gallery never mixes source images with fallback art.
+ */
+async function resolveProductImages(item: SeedProduct, assets: SeedAssets): Promise<ProductImage[]> {
+  if (item.source && assets.live) {
+    const images: ProductImage[] = [];
+    for (const path of item.source.images) {
+      try {
+        const resolved = await assets.resolveTf({
+          tfSlug: item.source.tfSlug,
+          productUrl: item.source.productUrl,
+          path,
+        });
+        images.push({
+          url: resolved.url,
+          alt: item.name.hy,
+          order: images.length + 1,
+          publicId: resolved.publicId,
+          mediaId: resolved.mediaId,
+        });
+      } catch (err) {
+        imageFailures.push({ product: item.slug, source: path, error: (err as Error).message });
+        logger.warn('Seed image import failed', { product: item.slug, source: path, error: (err as Error).message });
+      }
+    }
+    if (images.length > 0) return images;
+    imageFailures.push({
+      product: item.slug,
+      source: '(source page)',
+      error: 'all source images failed - falling back to the Pexels pipeline',
+    });
+    logger.warn('Seed image: falling back to the Pexels pipeline for this product', { product: item.slug });
+  }
+
+  // Local artwork in fallback mode; Pexels -> Cloudinary -> Media in live mode.
+  return Promise.all(
+    [1, 2, 3].map(async (n) => {
+      const resolved = await assets.resolve(`${item.image}${n === 1 ? '' : `-${n}`}`);
+      return {
+        url: resolved.url,
+        alt: item.name.hy,
+        order: n,
+        publicId: resolved.publicId,
+        mediaId: resolved.mediaId,
+      };
+    }),
+  );
+}
+
+async function seedCatalog(
+  categoryIds: Map<string, { id: unknown; ancestors: unknown[]; depth: number }>,
+  assets: SeedAssets,
+) {
   const collectionMembers = new Map<string, unknown[]>();
 
-  for (const item of seedProducts) {
+  for (const item of [...seedProducts, ...tfSeedProducts]) {
     const category = categoryIds.get(item.categoryCode);
     if (!category) throw new Error(`Seed product ${item.slug} points at unknown category ${item.categoryCode}`);
 
@@ -194,17 +267,15 @@ async function seedCatalog(categoryIds: Map<string, { id: unknown; ancestors: un
     if (item.withSize) optionGroups.push(sizeOption(`${item.price.toLocaleString('hy-AM')} ${env.CURRENCY_SYMBOL}`));
     if (item.withAddons) optionGroups.push(chocolateAddon, candyAddon);
 
-    const images = [1, 2, 3].map((n) => ({
-      url: seedImage(`${item.image}${n === 1 ? '' : `-${n}`}`),
-      alt: item.name.hy,
-      order: n,
-    }));
+    // Imported products first try their own source-page images; everything
+    // else goes through the documented Pexels -> Cloudinary -> Media pipeline.
+    const images = await resolveProductImages(item, assets);
 
     const doc = await Product.findOneAndUpdate(
       { slug: item.slug },
       {
         slug: item.slug,
-        sku: generateSku(),
+        sku: skuFromSlug(item.slug),
         name: item.name,
         shortDescription: item.shortDescription,
         description: {
@@ -245,18 +316,20 @@ async function seedCatalog(categoryIds: Map<string, { id: unknown; ancestors: un
       list.push(doc._id);
       collectionMembers.set(slug, list);
     }
-
   }
 
   for (const item of seedCollections) {
+    const coverImage = (await assets.resolve(`collection-${item.slug}`)).url;
+    const bannerImage = item.bannerImage ? (await assets.resolve(item.bannerImage)).url : undefined;
+
     await Collection.findOneAndUpdate(
       { slug: item.slug },
       {
         slug: item.slug,
         title: item.title,
         subtitle: item.subtitle,
-        coverImage: seedImage(`collection-${item.slug}`),
-        bannerImage: item.bannerImage ? seedImage(item.bannerImage) : undefined,
+        coverImage,
+        bannerImage,
         products: collectionMembers.get(item.slug) ?? [],
         order: item.order,
         showOnHome: item.showOnHome,
@@ -267,24 +340,43 @@ async function seedCatalog(categoryIds: Map<string, { id: unknown; ancestors: un
   }
 }
 
-async function seedContent() {
+async function seedContent(assets: SeedAssets) {
   for (const post of seedPosts) {
+    const coverImage = post.coverImage ? (await assets.resolve(post.coverImage)).url : undefined;
     await Post.findOneAndUpdate(
       { slug: post.slug },
-      { ...post, isPublished: true, publishedAt: new Date() },
+      { ...post, coverImage, isPublished: true, publishedAt: new Date() },
       { upsert: true, setDefaultsOnInsert: true },
     );
   }
 
   for (const plan of seedPlans) {
+    const image = (await assets.resolve(plan.image)).url;
     await SubscriptionPlan.findOneAndUpdate(
       { slug: plan.slug },
-      { ...plan, isActive: true },
+      { ...plan, image, isActive: true },
       { upsert: true, setDefaultsOnInsert: true },
     );
   }
 
-  await Setting.findOneAndUpdate({ key: 'storefront' }, seedSettings, { upsert: true, setDefaultsOnInsert: true });
+  const heroSlides = await Promise.all(
+    seedSettings.heroSlides.map(async (slide) => ({
+      ...slide,
+      image: (await assets.resolve(slide.image)).url,
+    })),
+  );
+  const themeTiles = await Promise.all(
+    seedSettings.themeTiles.map(async (tile) => ({
+      ...tile,
+      image: tile.image ? (await assets.resolve(tile.image)).url : undefined,
+    })),
+  );
+
+  await Setting.findOneAndUpdate(
+    { key: 'storefront' },
+    { ...seedSettings, heroSlides, themeTiles },
+    { upsert: true, setDefaultsOnInsert: true },
+  );
 }
 
 async function seedReviews() {
@@ -350,46 +442,236 @@ async function refreshCategoryCounts() {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* post-seed verification                                                      */
+/* -------------------------------------------------------------------------- */
+
+/** A displayed image URL that still points at a download source must fail the seed. */
+const PEXELS_URL = /images\.pexels\.com/;
+const THANKSFLOWERS_URL = /thanksflowers\.am/i;
+
+export interface SeedReport {
+  categories: number;
+  products: number;
+  collections: number;
+  posts: number;
+  plans: number;
+  media: number;
+  imageFailures: number;
+}
+
+async function findDuplicateSlug<T extends { slug: string }>(model: Model<T>): Promise<string | null> {
+  const rows = await model.aggregate<{ _id: string; count: number }>([
+    { $group: { _id: '$slug', count: { $sum: 1 } } },
+    { $match: { count: { $gt: 1 } } },
+    { $limit: 1 },
+  ]);
+  return rows[0]?._id ?? null;
+}
+
+/**
+ * Everything the storefront can render as an image ends up in one list, then:
+ *  - no displayed URL may point at Pexels (it is a download source, not a CDN);
+ *  - in live mode every displayed URL must be one of our Cloudinary copies;
+ *  - every product mediaId must resolve to a Media row;
+ *  - a sample of URLs must actually answer over HTTPS.
+ */
+async function verifySeed(assets: SeedAssets): Promise<SeedReport> {
+  const [products, categories, collections, posts, plans, storefront] = await Promise.all([
+    Product.find({}, { slug: 1, images: 1, thumbnail: 1 }),
+    Category.find({}, { slug: 1, image: 1 }),
+    Collection.find({}, { slug: 1, coverImage: 1, bannerImage: 1 }),
+    Post.find({}, { slug: 1, coverImage: 1 }),
+    SubscriptionPlan.find({}, { slug: 1, image: 1 }),
+    Setting.findOne({ key: 'storefront' }),
+  ]);
+
+  const display: { where: string; url: string }[] = [];
+  for (const product of products) {
+    for (const [index, image] of product.images.entries()) {
+      display.push({ where: `Product(${product.slug}).images[${index}]`, url: image.url });
+    }
+    if (product.thumbnail) display.push({ where: `Product(${product.slug}).thumbnail`, url: product.thumbnail });
+  }
+  for (const category of categories) {
+    if (category.image) display.push({ where: `Category(${category.slug}).image`, url: category.image });
+  }
+  for (const collection of collections) {
+    if (collection.coverImage) display.push({ where: `Collection(${collection.slug}).coverImage`, url: collection.coverImage });
+    if (collection.bannerImage) display.push({ where: `Collection(${collection.slug}).bannerImage`, url: collection.bannerImage });
+  }
+  for (const post of posts) {
+    if (post.coverImage) display.push({ where: `Post(${post.slug}).coverImage`, url: post.coverImage });
+  }
+  for (const plan of plans) {
+    if (plan.image) display.push({ where: `SubscriptionPlan(${plan.slug}).image`, url: plan.image });
+  }
+  for (const [index, slide] of (storefront?.heroSlides ?? []).entries()) {
+    display.push({ where: `Setting.heroSlides[${index}].image`, url: slide.image });
+    if (slide.mobileImage) display.push({ where: `Setting.heroSlides[${index}].mobileImage`, url: slide.mobileImage });
+  }
+  for (const [index, tile] of (storefront?.themeTiles ?? []).entries()) {
+    if (tile.image) display.push({ where: `Setting.themeTiles[${index}].image`, url: tile.image });
+  }
+
+  const pexels = display.filter((entry) => PEXELS_URL.test(entry.url));
+  if (pexels.length > 0) {
+    throw new Error(
+      `Seed verification failed: ${pexels.length} displayed image URL(s) still point at Pexels ` +
+        `(e.g. ${pexels[0].where} -> ${pexels[0].url}). Pexels is a download source; only our Cloudinary copy may be rendered.`,
+    );
+  }
+
+  const thanksflowers = display.filter((entry) => THANKSFLOWERS_URL.test(entry.url));
+  if (thanksflowers.length > 0) {
+    throw new Error(
+      `Seed verification failed: ${thanksflowers.length} displayed image URL(s) still point at ThanksFlowers ` +
+        `(e.g. ${thanksflowers[0].where} -> ${thanksflowers[0].url}). The source page is a download source; only our Cloudinary copy may be rendered.`,
+    );
+  }
+
+  const imageless = products.find((product) => product.images.length === 0 || !product.thumbnail);
+  if (imageless) {
+    throw new Error(`Seed verification failed: product "${imageless.slug}" has no images.`);
+  }
+
+  if (assets.live) {
+    const offOrigin = display.filter((entry) => !isOurCloudinaryUrl(entry.url));
+    if (offOrigin.length > 0) {
+      throw new Error(
+        `Seed verification failed: ${offOrigin.length} displayed image URL(s) are not our Cloudinary delivery URLs ` +
+          `(e.g. ${offOrigin[0].where} -> ${offOrigin[0].url}).`,
+      );
+    }
+  }
+
+  const mediaRows = await Media.find({}, { key: 1, url: 1 });
+  const mediaLeak = mediaRows.find((media) => PEXELS_URL.test(media.url));
+  if (mediaLeak) {
+    throw new Error(`Seed verification failed: Media(${mediaLeak.key}).url points at Pexels.`);
+  }
+  const tfMediaLeak = mediaRows.find((media) => THANKSFLOWERS_URL.test(media.url));
+  if (tfMediaLeak) {
+    throw new Error(`Seed verification failed: Media(${tfMediaLeak.key}).url points at ThanksFlowers.`);
+  }
+
+  if (assets.live) {
+    const referenced = new Map<string, mongoose.Types.ObjectId>();
+    for (const product of products) {
+      for (const image of product.images) {
+        if (image.mediaId) referenced.set(image.mediaId.toHexString(), image.mediaId);
+      }
+    }
+    if (referenced.size === 0) {
+      throw new Error('Seed verification failed: live mode produced no Media-backed product images.');
+    }
+    const found = await Media.countDocuments({ _id: { $in: [...referenced.values()] } });
+    if (found !== referenced.size) {
+      throw new Error(
+        `Seed verification failed: ${referenced.size - found} product image mediaId(s) reference a missing Media row.`,
+      );
+    }
+  }
+
+  const categoryIds = await Category.distinct('_id');
+  const strayProducts = await Product.countDocuments({ category: { $nin: categoryIds } });
+  if (strayProducts > 0) {
+    throw new Error(`Seed verification failed: ${strayProducts} product(s) reference a missing category.`);
+  }
+  const productIds = await Product.distinct('_id');
+  const strayCollections = await Collection.countDocuments({ products: { $elemMatch: { $nin: productIds } } });
+  if (strayCollections > 0) {
+    throw new Error(`Seed verification failed: ${strayCollections} collection(s) reference a missing product.`);
+  }
+
+  const duplicate = (
+    await Promise.all([
+      findDuplicateSlug(Product).then((slug) => ({ kind: 'product', slug })),
+      findDuplicateSlug(Category).then((slug) => ({ kind: 'category', slug })),
+      findDuplicateSlug(Collection).then((slug) => ({ kind: 'collection', slug })),
+      findDuplicateSlug(Post).then((slug) => ({ kind: 'post', slug })),
+    ])
+  ).find((pair) => pair.slug);
+  if (duplicate) {
+    throw new Error(`Seed verification failed: duplicate ${duplicate.kind} slug "${duplicate.slug}".`);
+  }
+
+  if (assets.live) {
+    const magazine = await Post.findOne({ type: 'magazine' }).sort({ createdAt: 1 });
+    const first = products[0];
+    const last = products[products.length - 1];
+    const probes: { where: string; url: string | undefined }[] = [
+      { where: 'Setting.heroSlides[0].image', url: storefront?.heroSlides?.[0]?.image },
+      { where: `Product(${first?.slug ?? '?'}).images[0]`, url: first?.images?.[0]?.url },
+      { where: `Product(${first?.slug ?? '?'}).images[1]`, url: first?.images?.[1]?.url },
+      { where: `Product(${last?.slug ?? '?'}).images[2]`, url: last?.images?.[2]?.url },
+      { where: `Post(${magazine?.slug ?? '?'}).coverImage`, url: magazine?.coverImage },
+    ];
+    const reachable = await Promise.all(
+      probes
+        .filter((probe): probe is { where: string; url: string } => Boolean(probe.url))
+        .map(async (probe) => ({ probe, ok: await assets.verifyUrl(probe.url) })),
+    );
+    const broken = reachable.filter((entry) => !entry.ok);
+    if (broken.length > 0) {
+      throw new Error(
+        `Seed verification failed: ${broken.length} image URL(s) are not reachable ` +
+          `(e.g. ${broken[0].probe.where} -> ${broken[0].probe.url}).`,
+      );
+    }
+  }
+
+  return {
+    categories: categories.length,
+    products: products.length,
+    collections: collections.length,
+    posts: posts.length,
+    plans: plans.length,
+    media: mediaRows.length,
+    imageFailures: imageFailures.length,
+  };
+}
+
 export interface SeedOptions {
   fresh?: boolean;
   /**
-   * `--yes`: explicit acknowledgement for the destructive `--fresh` path.
-   * Production refuses a wipe without it.
+   * The destructive path (SEED_RESET=true) must be acknowledged explicitly;
+   * production is refused outright, with or without the acknowledgement.
    */
   confirmDestructive?: boolean;
 }
 
-/** Idempotent: safe to run repeatedly. Passing fresh:true drops existing documents first. */
+/** Idempotent: safe to run repeatedly. Passing fresh:true drops the database first. */
 export async function runSeed(options: SeedOptions = {}) {
+  imageFailures.length = 0;
   if (options.fresh) {
     /**
-     * Fail closed: `--fresh` empties every collection it finds, so a production run
-     * has to be confirmed on the command line (`--yes`) and can never be triggered by
-     * a stale script or a muscle-memory command.
+     * Fail closed: a destructive run needs both the SEED_RESET signal and a
+     * non-production NODE_ENV, so no stale script or muscle-memory command can
+     * empty a live shop.
      */
-    if (env.isProd && !options.confirmDestructive) {
-      throw new Error(
-        'Refusing --fresh in production: it deletes all seeded collections. Re-run with --yes once a backup exists.',
-      );
+    if (env.isProd) {
+      throw new Error('Refusing to reset: destructive seeding is disabled in production.');
+    }
+    if (!options.confirmDestructive) {
+      throw new Error('Refusing to reset: SEED_RESET=true is required for a destructive run.');
     }
     await wipe();
   }
 
+  const assets = createSeedAssets();
   await seedUsers();
-  const categoryIds = await seedCategoryTree();
-  await seedCatalog(categoryIds as never);
-  await seedContent();
+  const categoryIds = await seedCategoryTree(assets);
+  await seedCatalog(categoryIds, assets);
+  await seedContent(assets);
   await seedReviews();
   await refreshCategoryCounts();
+  const report = await verifySeed(assets);
 
-  const [categories, products, collections, posts, plans] = await Promise.all([
-    Category.countDocuments(),
-    Product.countDocuments(),
-    Collection.countDocuments(),
-    Post.countDocuments(),
-    SubscriptionPlan.countDocuments(),
-  ]);
-
-  logger.info('Seed complete', { categories, products, collections, posts, plans });
-  return { categories, products, collections, posts, plans };
+  logger.info('Seed complete', {
+    ...report,
+    imageMode: assets.live ? 'thanksflowers+pexels->cloudinary' : 'local-fallback',
+    ...assets.stats(),
+  });
+  return report;
 }

@@ -26,7 +26,7 @@ export const bySlug = asyncHandler(async (req: Request, res: Response) => {
  * shape so the home rails and the collection page render identical cards.
  */
 const CARD_FIELDS =
-  'slug name price compareAtPrice thumbnail images badges ratingAverage ratingCount soldCount sameDayAvailable deliveryMethods';
+  'slug name price compareAtPrice thumbnail images badges ratingAverage ratingCount soldCount sameDayAvailable deliveryMethods stock trackStock';
 
 export const collections = asyncHandler(async (req: Request, res: Response) => {
   const filter: Record<string, unknown> = { isActive: true };

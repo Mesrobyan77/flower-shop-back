@@ -67,6 +67,11 @@ export const subscribeSchema = z.object({
   startDate: z.string().optional(),
 });
 
+export const subscriptionActionParams = z.object({
+  id: objectId,
+  action: z.enum(['pause', 'resume', 'cancel']),
+});
+
 export const updateSettingsSchema = z.object({
   promoBar: z
     .object({ enabled: z.boolean(), text: localizedOptionalInput.optional(), href: z.string().optional() })
@@ -127,3 +132,7 @@ export const adminUserListQuery = z.object({
 });
 
 export const updateUserRoleSchema = z.object({ role: z.enum(['user', 'admin']) });
+
+export const updateUserActiveSchema = z.object({ isActive: z.boolean() });
+
+export const updateReviewApprovalSchema = z.object({ isApproved: z.boolean() });

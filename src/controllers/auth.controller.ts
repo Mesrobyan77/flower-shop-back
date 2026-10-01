@@ -70,6 +70,11 @@ export const updateProfile = asyncHandler(async (req: AuthedRequest, res: Respon
 });
 
 export const changePassword = asyncHandler(async (req: AuthedRequest, res: Response) => {
-  await authService.changePassword(req.user!.sub, req.body.currentPassword, req.body.newPassword);
+  await authService.changePassword(
+    req.user!.sub,
+    req.body.currentPassword,
+    req.body.newPassword,
+    refreshCookieToken(req),
+  );
   return noContent(res);
 });

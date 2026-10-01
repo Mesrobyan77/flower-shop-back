@@ -8,7 +8,7 @@ import { writeLimiter } from '../middlewares/rateLimit';
 import { validate } from '../middlewares/validate';
 import { productListQuery } from '../validators/catalog.validator';
 import { createInquirySchema, createReviewSchema } from '../validators/content.validator';
-import { slugParam } from '../validators/common.validator';
+import { idParam, slugParam } from '../validators/common.validator';
 
 const router = Router();
 
@@ -30,11 +30,11 @@ router.get('/products/:slug/reviews', validate({ params: slugParam }), reviewCon
 router.get('/products/:slug/inquiries', validate({ params: slugParam }), optionalAuth, inquiryController.listForProduct);
 
 router.post('/reviews', requireAuth, writeLimiter, validate({ body: createReviewSchema }), reviewController.create);
-router.delete('/reviews/:id', requireAuth, reviewController.remove);
-router.post('/reviews/:id/helpful', writeLimiter, reviewController.markHelpful);
+router.delete('/reviews/:id', requireAuth, validate({ params: idParam }), reviewController.remove);
+router.post('/reviews/:id/helpful', writeLimiter, validate({ params: idParam }), reviewController.markHelpful);
 
 router.post('/inquiries', requireAuth, writeLimiter, validate({ body: createInquirySchema }), inquiryController.create);
 router.get('/inquiries/mine', requireAuth, inquiryController.mine);
-router.get('/inquiries/:id', optionalAuth, inquiryController.detail);
+router.get('/inquiries/:id', optionalAuth, validate({ params: idParam }), inquiryController.detail);
 
 export default router;

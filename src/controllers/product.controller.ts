@@ -80,7 +80,7 @@ export const detail = asyncHandler(async (req: AuthedRequest, res: Response) => 
   })
     .sort({ soldCount: -1 })
     .limit(8)
-    .select('slug name price compareAtPrice thumbnail images badges ratingAverage ratingCount')
+    .select('slug name price compareAtPrice thumbnail images badges ratingAverage ratingCount stock trackStock')
     .lean();
 
   return ok(res, { product, breadcrumb: crumbs, delivery, related });

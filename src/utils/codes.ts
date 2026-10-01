@@ -22,6 +22,12 @@ export function generateSku(): string {
   return `XF-${randomChars(6)}`;
 }
 
+/** Stable SKU derived from the seed slug, so repeated seeds keep the same code. */
+export function skuFromSlug(slug: string): string {
+  const digest = crypto.createHash('sha1').update(slug).digest('hex').toUpperCase();
+  return `XF-${digest.slice(0, 6)}`;
+}
+
 export function randomToken(bytes = 32): string {
   return crypto.randomBytes(bytes).toString('hex');
 }

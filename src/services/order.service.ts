@@ -1,3 +1,4 @@
+import { env } from '../config/env';
 import { Cart } from '../models/Cart';
 import { Order, type OrderDocument, type OrderItemSubdoc } from '../models/Order';
 import { Product, type ProductDocument } from '../models/Product';
@@ -11,6 +12,8 @@ import {
   type DeliveryMethod,
   type Locale,
   type OrderStatus,
+  type PaymentMethod,
+  type PaymentStatus,
 } from '../constants';
 import { ApiError } from '../utils/ApiError';
 import { generateOrderCode } from '../utils/codes';
@@ -18,6 +21,12 @@ import { fromDateKey } from '../utils/dateKey';
 import { runInTransaction } from '../utils/transaction';
 import { calculateTotals } from './pricing.service';
 import { quoteDelivery, validateDeliverySelection } from './delivery.service';
+import {
+  checkoutPaymentPayload,
+  createPaymentForOrder,
+  providerForMethod,
+  type CheckoutPaymentPayload,
+} from './payment.service';
 
 export interface CheckoutInput {
   customer: { name: string; email: string; phone: string };
@@ -38,6 +47,7 @@ export interface CheckoutInput {
   customerNote?: string;
   pointsUsed?: number;
   agreeTerms: boolean;
+  paymentMethod?: PaymentMethod;
 }
 
 export interface CheckoutContext {
@@ -46,13 +56,31 @@ export interface CheckoutContext {
   locale?: Locale;
 }
 
+export interface CheckoutResult {
+  order: OrderDocument;
+  /** Present for online methods; the browser uses its token to start paying. */
+  payment: CheckoutPaymentPayload | null;
+}
+
 /**
  * Creates the order from the server-side cart. Prices, discounts and delivery
  * fees are all recomputed here; nothing monetary is trusted from the client.
- * Payment is always cash on delivery, so no gateway call happens.
+ * Cash on delivery settles at the door; online methods get their Payment record
+ * in the same transaction, but become paid only on a provider-verified signal.
  */
-export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Promise<OrderDocument> {
+export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Promise<CheckoutResult> {
   if (!input.agreeTerms) throw ApiError.badRequest('You must accept the terms to place an order');
+
+  const method = input.paymentMethod ?? 'cash_on_delivery';
+  const provider = providerForMethod(method);
+  /**
+   * A checkout for a provider this deployment cannot reach must fail loudly:
+   * silently downgrading to cash on delivery would betray the chosen method.
+   */
+  if (provider && !env.payments[provider].enabled) {
+    const label = provider === 'idram' ? 'Idram' : 'ArCa';
+    throw new ApiError(503, `${label} payments are not configured on this server`, undefined, 'PROVIDER_UNAVAILABLE');
+  }
 
   const locale = ctx.locale ?? DEFAULT_LOCALE;
   const cartFilter = ctx.userId ? { user: ctx.userId } : { sessionId: ctx.sessionId };
@@ -133,7 +161,7 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
     pointsUsed: requestedPoints,
   });
 
-  const order = await runInTransaction(async (session) => {
+  const result = await runInTransaction(async (session) => {
     const opts = { session };
 
     /**
@@ -173,7 +201,7 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
           pointsUsed: totals.pointsUsed,
           total: totals.total,
           pointsEarned: totals.pointsEarned,
-          paymentMethod: 'cash_on_delivery',
+          paymentMethod: method,
           paymentStatus: 'pending',
           status: 'pending',
           statusHistory: [{ status: 'pending', changedAt: new Date(), note: 'Order placed' }],
@@ -222,10 +250,14 @@ export async function checkout(input: CheckoutInput, ctx: CheckoutContext): Prom
       }
     }
 
-    return doc;
+    /** Online methods: the payment record shares the order's transaction, so a
+     *  rolled-back checkout can never leave an orphaned payment behind. */
+    const payment = provider ? await createPaymentForOrder(doc, provider, session) : null;
+
+    return { order: doc, payment: payment ? checkoutPaymentPayload(payment) : null };
   });
 
-  return order;
+  return result;
 }
 
 /**
@@ -280,13 +312,24 @@ export async function changeStatus(
     const patch: Record<string, unknown> = { status: next };
     if (next === 'delivered') {
       patch['delivery.deliveredAt'] = new Date();
-      // Cash on delivery: money changes hands exactly at delivery.
-      patch.paymentStatus = 'paid';
-      patch.paidAt = new Date();
+      /**
+       * Cash on delivery: money changes hands exactly at delivery. An online
+       * payment settles through its provider and its state is only ever changed
+       * by provider-verified signals, so delivery must not touch it.
+       */
+      if (order.paymentMethod === 'cash_on_delivery') {
+        patch.paymentStatus = 'paid';
+        patch.paidAt = new Date();
+      }
     }
     if (next === 'completed') patch.completedAt = new Date();
     if (next === 'cancelled') {
-      patch.paymentStatus = 'pending';
+      /**
+       * COD was never charged, so its payment state resets with the order. An
+       * online payment keeps its truthful provider-backed state - money that
+       * was taken is refunded as a separate, explicit admin action.
+       */
+      if (order.paymentMethod === 'cash_on_delivery') patch.paymentStatus = 'pending';
       patch.cancelReason = note;
     }
 
@@ -331,7 +374,7 @@ export async function changeStatus(
   });
 }
 
-export async function setPaymentStatus(orderId: string, status: 'pending' | 'paid' | 'refunded') {
+export async function setPaymentStatus(orderId: string, status: PaymentStatus) {
   const order = await Order.findById(orderId);
   if (!order) throw ApiError.notFound('Order not found');
   order.paymentStatus = status;

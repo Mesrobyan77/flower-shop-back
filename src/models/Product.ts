@@ -25,6 +25,9 @@ export interface ProductImage {
   url: string;
   alt?: string;
   order: number;
+  /** Cloudinary public id of our hosted copy; the url is its delivery URL. */
+  publicId?: string;
+  mediaId?: Types.ObjectId;
 }
 
 export interface ProductDocument extends Document {
@@ -97,6 +100,8 @@ const imageSchema = new Schema<ProductImage>(
     url: { type: String, required: true },
     alt: { type: String },
     order: { type: Number, default: 0 },
+    publicId: { type: String },
+    mediaId: { type: Schema.Types.ObjectId, ref: 'Media' },
   },
   { _id: false },
 );

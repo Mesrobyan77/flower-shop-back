@@ -35,10 +35,13 @@ export const ORDER_STATUS_FLOW: Record<OrderStatus, OrderStatus[]> = {
   cancelled: [],
 };
 
-export const PAYMENT_METHODS = ['cash_on_delivery'] as const;
+export const PAYMENT_METHODS = ['cash_on_delivery', 'idram', 'arca'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-export const PAYMENT_STATUSES = ['pending', 'paid', 'refunded'] as const;
+/** Online methods are settled by a provider; COD settles on delivery. */
+export const ONLINE_PAYMENT_METHODS: PaymentMethod[] = ['idram', 'arca'];
+
+export const PAYMENT_STATUSES = ['pending', 'paid', 'failed', 'cancelled', 'refunded'] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 export const USER_ROLES = ['user', 'admin'] as const;

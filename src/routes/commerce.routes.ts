@@ -8,6 +8,7 @@ import { validate } from '../middlewares/validate';
 import {
   addToCartSchema,
   cancelOrderSchema,
+  cartItemParam,
   checkoutSchema,
   deliveryQuoteQuery,
   guestLookupSchema,
@@ -21,8 +22,8 @@ const router = Router();
 router.use('/cart', guestSession, optionalAuth);
 router.get('/cart', cartController.view);
 router.post('/cart/items', validate({ body: addToCartSchema }), cartController.add);
-router.patch('/cart/items/:itemId', validate({ body: updateCartItemSchema }), cartController.update);
-router.delete('/cart/items/:itemId', cartController.remove);
+router.patch('/cart/items/:itemId', validate({ params: cartItemParam, body: updateCartItemSchema }), cartController.update);
+router.delete('/cart/items/:itemId', validate({ params: cartItemParam }), cartController.remove);
 router.delete('/cart', cartController.clear);
 
 /* delivery rules feed the product page and checkout */

@@ -298,7 +298,7 @@ async function authzProbes(adminToken: string, member: { token: string; id: stri
   });
   check('the member can place an order', placed.status === 201, placed.body);
 
-  const code = placed.body?.data?.code ?? '';
+  const code = placed.body?.data?.order?.code ?? '';
   const owner = await call(`/orders/${code}`, { token: member.token });
   const intruder = await call(`/orders/${code}`, { token: stranger.token });
   const intruderCancel = await call(`/orders/${code}/cancel`, { method: 'POST', token: stranger.token, body: { reason: 'not mine' } });

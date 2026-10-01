@@ -12,12 +12,12 @@ import { DELIVERY_METHODS, REGIONS, type DeliveryMethod, type Locale } from '../
 import type { AuthedRequest } from '../types';
 
 export const checkout = asyncHandler(async (req: AuthedRequest, res: Response) => {
-  const order = await orderService.checkout(req.body, {
+  const result = await orderService.checkout(req.body, {
     userId: req.user?.sub,
     sessionId: (req as Request & { sessionId?: string }).sessionId,
     locale: (req.query.locale as Locale) || undefined,
   });
-  return created(res, order);
+  return created(res, result);
 });
 
 export const myOrders = asyncHandler(async (req: AuthedRequest, res: Response) => {

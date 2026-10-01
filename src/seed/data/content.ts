@@ -1,4 +1,3 @@
-import { seedImage } from '../images';
 import type { PostType, SubscriptionCycle } from '../../constants';
 
 export interface SeedPost {
@@ -32,7 +31,7 @@ export const seedPosts: SeedPost[] = [
       en: 'Change the water daily. Cut the stems at a 45-degree angle. Keep the bouquet away from direct sun and from fruit. Remove any leaves sitting below the waterline. Keep the room between 18 and 22 degrees.',
       ru: 'Меняйте воду ежедневно. Подрезайте стебли под углом 45 градусов. Держите букет вдали от прямого солнца и фруктов. Удаляйте листья ниже уровня воды. Держите комнату при 18-22 градусах.',
     },
-    coverImage: seedImage('magazine-01'),
+    coverImage: 'magazine-01',
     tags: ['care', 'guide'],
     category: 'care',
   },
@@ -54,7 +53,7 @@ export const seedPosts: SeedPost[] = [
       en: 'A red rose is love, a white one is purity. The peony stands for prosperity and a happy marriage. A yellow tulip is sunshine and warmth. The white chrysanthemum is respect and remembrance.',
       ru: 'Красная роза — любовь, белая — чистота. Пион означает благополучие и счастливый брак. Жёлтый тюльпан — солнце и тепло. Белая хризантема — уважение и память.',
     },
-    coverImage: seedImage('magazine-02'),
+    coverImage: 'magazine-02',
     tags: ['guide'],
     category: 'guide',
   },
@@ -76,9 +75,53 @@ export const seedPosts: SeedPost[] = [
       en: 'Our day starts at the market while the city is still asleep. Every stem is picked by hand, a quality lead checks freshness, and only then do the florists start arranging.',
       ru: 'Наш день начинается на рынке, когда город ещё спит. Каждый стебель отбирается вручную, менеджер по качеству проверяет свежесть, и только потом флористы начинают работу.',
     },
-    coverImage: seedImage('magazine-03'),
+    coverImage: 'magazine-03',
     tags: ['studio'],
     category: 'studio',
+  },
+  {
+    type: 'magazine',
+    slug: 'flower-care-myths',
+    title: {
+      hy: 'Ծաղկի խնամքի 5 միֆ, որ ժամանակն է մոռանալ',
+      en: 'Five flower-care myths worth forgetting',
+      ru: 'Пять мифов об уходе за цветами, о которых пора забыть',
+    },
+    excerpt: {
+      hy: 'Մետաղադրամը ծաղկամանի մեջ չի օգնում, իսկ շաքարը՝ վնասում է։',
+      en: 'A coin does not help, and sugar does more harm than good.',
+      ru: 'Монетка в вазе не помогает, а сахар скорее вредит.',
+    },
+    body: {
+      hy: 'Միֆ 1. Մետաղադրամը ջրում մաքրում է այն. իրականում ջուրը պարզապես պետք է ամեն օր փոխել։ Միֆ 2. Շաքարը երկարացնում է ծաղիկների կյանքը. քաղցր ջուրը սնունդ է բակտերիաների համար։ Միֆ 3. Սառը ջուրը միշտ ավելի լավ է. կտրելուց հետո ցողունները սիրում են սենյակային ջերմաստիճան։ Միֆ 4. Ցողունը պետք է կտրել ուղիղ. 45 աստիճան անկյունը մեծացնում է ջրի կլանումը։ Միֆ 5. Արևը ծաղիկներին ուժ է տալիս. արևի ուղիղ ճառագայթները թառամեցնում են փունջը ժամերում։',
+      en: 'Myth 1: a coin purifies the water. In truth the water simply needs changing daily. Myth 2: sugar keeps flowers alive longer; sweet water feeds bacteria. Myth 3: cold water is always better; freshly cut stems prefer room temperature. Myth 4: stems should be cut straight; a 45-degree angle helps them drink. Myth 5: sunlight gives flowers strength; direct sun wilts a bouquet within hours.',
+      ru: 'Миф 1: монетка очищает воду — на самом деле воду нужно просто менять каждый день. Миф 2: сахар продлевает жизнь цветов — сладкая вода кормит бактерии. Миф 3: холодная вода всегда лучше — свежий срез предпочитает комнатную температуру. Миф 4: стебель нужно резать прямо — угол в 45 градусов улучшает питьё. Миф 5: солнце даёт цветам силы — прямые лучи вянут букет за часы.',
+    },
+    coverImage: 'magazine-04',
+    tags: ['care', 'guide'],
+    category: 'care',
+  },
+  {
+    type: 'magazine',
+    slug: 'gift-etiquette-guide',
+    title: {
+      hy: 'Նվերների էթիկետ. ինչ, ում և երբ',
+      en: 'Gift etiquette: what to give, to whom, and when',
+      ru: 'Этикет подарков: что, кому и когда',
+    },
+    excerpt: {
+      hy: 'Փոքր ուղեցույց՝ ըստ առիթի և մարդու մոտիկության։',
+      en: 'A short guide by occasion and by how close the person is.',
+      ru: 'Короткий гид по поводу и степени близости.',
+    },
+    body: {
+      hy: 'Գործընկերոջը՝ չեզոք, կանաչ երանգների փունջ կամ բույս գրասենյակի համար։ Տատիկին՝ վառ, բուրավետ ծաղիկներ՝ ցածր փնջով, որ հարմար լինի դնել սեղանին։ Սիրելիին՝ նրա սիրած գույնի ծաղիկները, նույնիսկ եթե դա դասական կարմիրը չէ։ Շնորհակալության համար՝ ձեռքի փոքր փունջ, որը կարելի է տանել մետրոյով։ Իսկ ամենակարևորը՝ գրեք բացիկ. ծաղիկը գեղեցիկ է, իսկ բառերը՝ հիշվող։',
+      en: 'For a colleague: a neutral, green-toned bunch or a desk plant. For a grandmother: bright, fragrant flowers in a low arrangement that fits a table. For a partner: their favourite colour, even if it is not the classic red. To say thank you: a small hand bouquet that survives the metro ride home. And above all, write the card: the flowers are beautiful, but the words are what people keep.',
+      ru: 'Коллеге — нейтральный букет в зелёных тонах или растение для стола. Бабушке — яркие ароматные цветы в низкой композиции, чтобы удобно стояли на столе. Любимому человеку — его любимый цвет, даже если это не классический красный. В знак благодарности — небольшой букет, с которым легко доехать домой. И главное — напишите открытку: цветы красивы, а слова запоминаются.',
+    },
+    coverImage: 'magazine-05',
+    tags: ['guide', 'gift'],
+    category: 'guide',
   },
   {
     type: 'notice',
@@ -166,7 +209,7 @@ export const seedPosts: SeedPost[] = [
       en: 'Right after registration 2,000 AMD in points lands in your account, ready to use on your very first order.',
       ru: 'Сразу после регистрации на счёт зачисляется 2 000 драм бонусами, которые можно потратить на первый заказ.',
     },
-    coverImage: seedImage('event-01'),
+    coverImage: 'event-01',
     isPinned: true,
   },
 ];
@@ -192,7 +235,7 @@ export const seedPlans: SeedPlan[] = [
     },
     pricePerDelivery: 9500,
     cycle: 'weekly',
-    image: seedImage('subscribe-01'),
+    image: 'subscribe-01',
     order: 1,
   },
   {
@@ -205,7 +248,7 @@ export const seedPlans: SeedPlan[] = [
     },
     pricePerDelivery: 16000,
     cycle: 'biweekly',
-    image: seedImage('subscribe-02'),
+    image: 'subscribe-02',
     order: 2,
   },
   {
@@ -218,7 +261,7 @@ export const seedPlans: SeedPlan[] = [
     },
     pricePerDelivery: 26000,
     cycle: 'monthly',
-    image: seedImage('subscribe-03'),
+    image: 'subscribe-03',
     order: 3,
   },
 ];
@@ -236,7 +279,7 @@ export const seedSettings = {
   },
   heroSlides: [
     {
-      image: seedImage('hero-01'),
+      image: 'hero-01',
       title: {
         hy: 'Ծաղիկների առաքում ամբողջ Հայաստանում',
         en: 'Flower delivery across Armenia',
@@ -253,7 +296,7 @@ export const seedSettings = {
       order: 1,
     },
     {
-      image: seedImage('hero-02'),
+      image: 'hero-02',
       title: { hy: 'Ամսվա ծաղիկը՝ պիոն', en: 'Flower of the month: peony', ru: 'Цветок месяца: пион' },
       subtitle: {
         hy: 'Սեզոնի ամենասպասված ծաղիկն արդեն ստուդիայում է',
@@ -266,7 +309,7 @@ export const seedSettings = {
       order: 2,
     },
     {
-      image: seedImage('hero-03'),
+      image: 'hero-03',
       title: { hy: 'Ծաղկի բաժանորդագրություն', en: 'Flower subscription', ru: 'Подписка на цветы' },
       subtitle: {
         hy: 'Թարմ ծաղիկներ՝ ամեն շաբաթ, առանց հիշեցումների',
@@ -280,14 +323,14 @@ export const seedSettings = {
     },
   ],
   themeTiles: [
-    { image: seedImage('tile-01'), title: { hy: 'Ծննդյան օր', en: 'Birthday', ru: 'День рождения' }, href: '/catalog/flower-gifts', animated: false, order: 1 },
-    { image: seedImage('tile-02'), title: { hy: 'Սեր և շնորհակալություն', en: 'Love and thanks', ru: 'Любовь и благодарность' }, href: '/catalog/roses', animated: false, order: 2 },
-    { image: seedImage('tile-03'), title: { hy: 'Այսօր առաքում', en: 'Same-day delivery', ru: 'Доставка сегодня' }, href: '/catalog/flower-gifts?delivery=quick', animated: true, order: 3 },
-    { image: seedImage('tile-04'), title: { hy: 'Բացման նվեր', en: 'Opening gift', ru: 'Подарок на открытие' }, href: '/catalog/opening-plants', animated: false, order: 4 },
-    { image: seedImage('tile-05'), title: { hy: 'Առաջխաղացում', en: 'Promotion', ru: 'Повышение' }, href: '/catalog/promotion', animated: false, order: 5 },
-    { image: seedImage('tile-06'), title: { hy: 'Հարսանիք', en: 'Wedding', ru: 'Свадьба' }, href: '/catalog/wedding-flowers', animated: false, order: 6 },
-    { image: seedImage('tile-07'), title: { hy: 'Հոգեհանգիստ', en: 'Condolence', ru: 'Соболезнование' }, href: '/catalog/funeral-wreaths', animated: false, order: 7 },
-    { image: seedImage('tile-08'), title: { hy: 'DIY ծաղկաշուկա', en: 'DIY market', ru: 'DIY рынок' }, href: '/catalog/diy-market', animated: false, order: 8 },
+    { image: 'tile-01', title: { hy: 'Ծննդյան օր', en: 'Birthday', ru: 'День рождения' }, href: '/catalog/flower-gifts', animated: false, order: 1 },
+    { image: 'tile-02', title: { hy: 'Սեր և շնորհակալություն', en: 'Love and thanks', ru: 'Любовь и благодарность' }, href: '/catalog/roses', animated: false, order: 2 },
+    { image: 'tile-03', title: { hy: 'Այսօր առաքում', en: 'Same-day delivery', ru: 'Доставка сегодня' }, href: '/catalog/flower-gifts?delivery=quick', animated: true, order: 3 },
+    { image: 'tile-04', title: { hy: 'Բացման նվեր', en: 'Opening gift', ru: 'Подарок на открытие' }, href: '/catalog/opening-plants', animated: false, order: 4 },
+    { image: 'tile-05', title: { hy: 'Առաջխաղացում', en: 'Promotion', ru: 'Повышение' }, href: '/catalog/promotion', animated: false, order: 5 },
+    { image: 'tile-06', title: { hy: 'Հարսանիք', en: 'Wedding', ru: 'Свадьба' }, href: '/catalog/wedding-flowers', animated: false, order: 6 },
+    { image: 'tile-07', title: { hy: 'Հոգեհանգիստ', en: 'Condolence', ru: 'Соболезнование' }, href: '/catalog/funeral-wreaths', animated: false, order: 7 },
+    { image: 'tile-08', title: { hy: 'DIY ծաղկաշուկա', en: 'DIY market', ru: 'DIY рынок' }, href: '/catalog/diy-market', animated: false, order: 8 },
   ],
   counters: { reviews: 103535, deliveries: 833111, awardYears: 9 },
   contact: {

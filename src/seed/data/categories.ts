@@ -1,7 +1,7 @@
 /**
  * Category tree mirrors the reference GNB:
  *   0001 flower gifts / 0002 opening plants / 0003 promotion / 0004 wedding-funeral
- *   0006 trend pick / 0007 DIY flower market
+ *   0006 trend pick / 0007 DIY flower market / 0008 flower types
  * Codes are kept in the same 4-digit + 4-digit shape so sub-categories sort naturally.
  */
 export interface SeedCategory {
@@ -153,6 +153,56 @@ export const seedCategories: SeedCategory[] = [
     parentCode: '0007',
     order: 2,
   },
+
+  {
+    code: '0008',
+    slug: 'flower-types',
+    name: { hy: 'Ծաղիկներն ըստ տեսակի', en: 'Flowers by type', ru: 'Цветы по видам' },
+    order: 7,
+    icon: 'flower',
+  },
+  {
+    code: '00080001',
+    slug: 'tulips',
+    name: { hy: 'Կակաչներ', en: 'Tulips', ru: 'Тюльпаны' },
+    parentCode: '0008',
+    order: 1,
+  },
+  {
+    code: '00080002',
+    slug: 'lilies',
+    name: { hy: 'Շուշաններ', en: 'Lilies', ru: 'Лилии' },
+    parentCode: '0008',
+    order: 2,
+  },
+  {
+    code: '00080003',
+    slug: 'sunflowers',
+    name: { hy: 'Արևածաղիկներ', en: 'Sunflowers', ru: 'Подсолнухи' },
+    parentCode: '0008',
+    order: 3,
+  },
+  {
+    code: '00080004',
+    slug: 'mixed-bouquets',
+    name: { hy: 'Խառը փնջեր', en: 'Mixed bouquets', ru: 'Смешанные букеты' },
+    parentCode: '0008',
+    order: 4,
+  },
+  {
+    code: '00080005',
+    slug: 'premium-bouquets',
+    name: { hy: 'Պրեմիում փնջեր', en: 'Premium bouquets', ru: 'Премиум букеты' },
+    parentCode: '0008',
+    order: 5,
+  },
+  {
+    code: '00080006',
+    slug: 'seasonal-flowers',
+    name: { hy: 'Սեզոնային ծաղիկներ', en: 'Seasonal flowers', ru: 'Сезонные цветы' },
+    parentCode: '0008',
+    order: 6,
+  },
 ];
 
 export interface SeedCollection {
@@ -233,5 +283,49 @@ export const seedCollections: SeedCollection[] = [
     showOnHome: true,
     order: 6,
     bannerImage: 'bg-famous',
+  },
+  {
+    slug: 'romantic',
+    title: { hy: 'Ռոմանտիկ', en: 'Romantic', ru: 'Романтичное' },
+    subtitle: {
+      hy: 'Փունջեր՝ սիրո խոստովանության համար',
+      en: 'Bouquets that say it better than words',
+      ru: 'Букеты, говорящие лучше слов',
+    },
+    showOnHome: true,
+    order: 7,
+  },
+  {
+    slug: 'premium-picks',
+    title: { hy: 'Պրեմիում ընտրանի', en: 'Premium picks', ru: 'Премиум-подборка' },
+    subtitle: {
+      hy: 'Հազվագյուտ ծաղիկներ՝ մեծ առիթների համար',
+      en: 'Rare stems for the biggest occasions',
+      ru: 'Редкие цветы для особых случаев',
+    },
+    showOnHome: true,
+    order: 8,
+  },
+  {
+    slug: 'birthday',
+    title: { hy: 'Ծննդյան օր', en: 'Birthday', ru: 'День рождения' },
+    subtitle: {
+      hy: 'Ուրախ փունջեր՝ ծննդյան տոնի համար',
+      en: 'Joyful arrangements for the big day',
+      ru: 'Яркие букеты для праздника',
+    },
+    showOnHome: true,
+    order: 9,
+  },
+  {
+    slug: 'best-sellers',
+    title: { hy: 'Բեսթսելլերներ', en: 'Best sellers', ru: 'Бестселлеры' },
+    subtitle: {
+      hy: 'Ամենապատվիրված փունջերը ստուդիայից',
+      en: 'The bouquets our customers reorder most',
+      ru: 'Букеты, которые заказывают снова и снова',
+    },
+    showOnHome: true,
+    order: 10,
   },
 ];

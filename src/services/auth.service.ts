@@ -172,7 +172,12 @@ export async function currentUser(userId: string): Promise<PublicUser> {
   return toPublicUser(user);
 }
 
-export async function changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+export async function changePassword(
+  userId: string,
+  currentPassword: string,
+  newPassword: string,
+  currentRefreshToken?: string,
+): Promise<void> {
   const user = await User.findById(userId).select('+password');
   if (!user) throw ApiError.notFound('User not found');
 
@@ -181,6 +186,22 @@ export async function changePassword(userId: string, currentPassword: string, ne
 
   user.password = newPassword;
   await user.save();
+
+  // Sessions minted under the old password must not survive the change. The
+  // family behind the presented token is kept so this device stays signed in;
+  // every other session is revoked.
+  let keepFamily: string | undefined;
+  if (currentRefreshToken) {
+    try {
+      keepFamily = verifyRefreshToken(currentRefreshToken).fid;
+    } catch {
+      keepFamily = undefined;
+    }
+  }
+  await RefreshSession.updateMany(
+    { user: userId, revokedAt: null, ...(keepFamily ? { familyId: { $ne: keepFamily } } : {}) },
+    { $set: { revokedAt: new Date(), revokedReason: 'password-change' } },
+  );
 }
 
 /** A basket built before signing in must survive the login. */

@@ -15,6 +15,7 @@
     "dev:memory": "tsx src/scripts/devServer.ts",
     "dev:memory:standalone": "tsx src/scripts/devServer.ts --standalone",
     "smoke": "tsx src/scripts/smoke.ts",
+    "payment:security": "tsx src/scripts/paymentSecurity.ts",
     "stock:concurrency": "tsx src/scripts/stockConcurrency.ts",
     "stock:concurrency:no-tx": "tsx src/scripts/stockConcurrency.ts --no-transactions",
     "points:concurrency": "tsx src/scripts/pointsConcurrency.ts",

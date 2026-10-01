@@ -235,7 +235,7 @@ async function placeOrder(token: string, productId: string, quantity: number, po
   const placed = await checkout(token, pointsUsed);
   if (placed.status !== 201) throw new Error(`checkout failed: ${JSON.stringify(placed.body)}`);
 
-  return placed.body.data as { id: string; code: string; total: number; pointsEarned: number; pointsUsed: number };
+  return placed.body.data.order as { id: string; code: string; total: number; pointsEarned: number; pointsUsed: number };
 }
 
 /* -------------------- single-document claim probe ------------------------ */

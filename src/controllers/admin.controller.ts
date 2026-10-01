@@ -123,7 +123,7 @@ export const listPosts = asyncHandler(async (req: Request, res: Response) => {
   if (req.query.type) filter.type = req.query.type;
 
   const [items, total] = await Promise.all([
-    Post.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).select('-body').lean(),
+    Post.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     Post.countDocuments(filter),
   ]);
 

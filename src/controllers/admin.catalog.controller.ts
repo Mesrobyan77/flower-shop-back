@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
-import { Category } from '../models/Category';
+import { Types } from 'mongoose';
+import { Category, type CategoryDocument } from '../models/Category';
 import { Collection } from '../models/Collection';
 import { Product } from '../models/Product';
 import { findProducts } from '../repositories/product.repository';
@@ -108,10 +109,69 @@ export const createCategory = asyncHandler(async (req: Request, res: Response) =
   return created(res, category);
 });
 
+/**
+ * Descendants keep absolute ancestors/depth copies and products snapshot the full
+ * categoryPath, so moving a category must rewrite all three. Absolute values make a
+ * partial run idempotent, and the moved node itself is patched by the caller only
+ * after this cascade, so a failed move is still detected and re-run on retry.
+ */
+async function cascadeCategoryMove(category: CategoryDocument, ancestors: Types.ObjectId[]) {
+  const descendants = await Category.find({ ancestors: category._id });
+  const basePath = [...ancestors, category._id];
+
+  const moves: Array<{ id: Types.ObjectId; path: Types.ObjectId[] }> = [{ id: category._id, path: basePath }];
+  const descendantOps = [];
+  for (const descendant of descendants) {
+    const index = descendant.ancestors.findIndex((id) => String(id) === String(category._id));
+    const path = [...basePath, ...descendant.ancestors.slice(index + 1)];
+    moves.push({ id: descendant._id, path });
+    descendantOps.push({
+      updateOne: { filter: { _id: descendant._id }, update: { $set: { ancestors: path, depth: path.length } } },
+    });
+  }
+
+  if (descendantOps.length) await Category.bulkWrite(descendantOps);
+  await Product.bulkWrite(
+    moves.map((move) => ({
+      updateMany: { filter: { category: move.id }, update: { $set: { categoryPath: move.path } } },
+    })),
+  );
+}
+
 export const updateCategory = asyncHandler(async (req: Request, res: Response) => {
-  const category = await Category.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  const category = await Category.findById(req.params.id);
   if (!category) throw ApiError.notFound('Category not found');
-  return ok(res, category);
+
+  const patch: Record<string, unknown> = { ...req.body };
+
+  if ('parent' in req.body) {
+    const newParentId = req.body.parent ? String(req.body.parent) : null;
+    const currentParentId = category.parent ? String(category.parent) : null;
+
+    if (newParentId !== currentParentId) {
+      let ancestors: Types.ObjectId[] = [];
+      let depth = 0;
+
+      if (newParentId) {
+        if (newParentId === String(category._id)) throw ApiError.badRequest('A category cannot be its own parent');
+        const parent = await Category.findById(newParentId);
+        if (!parent) throw ApiError.badRequest('Parent category does not exist');
+        if (parent.ancestors.some((id) => String(id) === String(category._id))) {
+          throw ApiError.badRequest('A category cannot be moved under its own descendant');
+        }
+        ancestors = [...parent.ancestors, parent._id];
+        depth = parent.depth + 1;
+      }
+
+      patch.ancestors = ancestors;
+      patch.depth = depth;
+      await cascadeCategoryMove(category, ancestors);
+    }
+  }
+
+  const updated = await Category.findByIdAndUpdate(req.params.id, patch, { new: true, runValidators: true });
+  if (!updated) throw ApiError.notFound('Category not found');
+  return ok(res, updated);
 });
 
 export const deleteCategory = asyncHandler(async (req: Request, res: Response) => {

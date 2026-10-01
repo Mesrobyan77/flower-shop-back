@@ -6,6 +6,7 @@ export * from './Collection';
 export * from './Product';
 export * from './Cart';
 export * from './Order';
+export * from './Payment';
 export * from './Review';
 export * from './Inquiry';
 export * from './Media';

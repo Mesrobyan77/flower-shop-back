@@ -9,8 +9,11 @@ import { created, noContent, ok, paginated } from '../utils/apiResponse';
 import type { AuthedRequest } from '../types';
 
 async function refreshProductRating(productId: string) {
+  const product = await Product.findById(productId);
+  if (!product) return;
+
   const [row] = await Review.aggregate<{ avg: number; count: number }>([
-    { $match: { product: (await Product.findById(productId))!._id, isApproved: true } },
+    { $match: { product: product._id, isApproved: true } },
     { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
   ]);
 
@@ -47,6 +50,9 @@ export const listForProduct = asyncHandler(async (req: Request, res: Response) =
 
 export const create = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const userId = req.user!.sub;
+
+  const product = await Product.findById(req.body.product);
+  if (!product) throw ApiError.notFound('Product not found');
 
   const delivered = await Order.findOne({
     user: userId,

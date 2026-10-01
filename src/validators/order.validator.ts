@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DELIVERY_METHODS, ORDER_STATUSES, PAYMENT_STATUSES, REGION_KEYS, TIME_SLOTS } from '../constants';
+import { DELIVERY_METHODS, ORDER_STATUSES, PAYMENT_METHODS, PAYMENT_STATUSES, REGION_KEYS, TIME_SLOTS } from '../constants';
 import { objectId, phone } from './common.validator';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use the YYYY-MM-DD format');
@@ -27,6 +27,8 @@ export const updateCartItemSchema = z.object({
   cardMessage: z.string().max(500).optional(),
 });
 
+export const cartItemParam = z.object({ itemId: objectId });
+
 export const checkoutSchema = z.object({
   customer: z.object({
     name: z.string().min(2, 'Name is too short').max(80),
@@ -49,6 +51,7 @@ export const checkoutSchema = z.object({
   }),
   customerNote: z.string().max(600).optional(),
   pointsUsed: z.number().int().min(0).optional().default(0),
+  paymentMethod: z.enum(PAYMENT_METHODS).default('cash_on_delivery'),
   agreeTerms: z.literal(true, { errorMap: () => ({ message: 'You must accept the terms' }) }),
 });
 
@@ -73,6 +76,8 @@ export const changeStatusSchema = z.object({
 });
 
 export const changePaymentStatusSchema = z.object({ paymentStatus: z.enum(PAYMENT_STATUSES) });
+
+export const updateOrderNoteSchema = z.object({ adminNote: z.string().max(600) });
 
 export const cancelOrderSchema = z.object({ reason: z.string().max(300).optional() });
 

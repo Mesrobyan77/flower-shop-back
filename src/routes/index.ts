@@ -5,6 +5,7 @@ import authRoutes from './auth.routes';
 import catalogRoutes from './catalog.routes';
 import commerceRoutes from './commerce.routes';
 import contentRoutes from './content.routes';
+import paymentRoutes from './payments.routes';
 import { MEMBER_GRADES, REGIONS, TIME_SLOTS } from '../constants';
 import { env } from '../config/env';
 import { ok } from '../utils/apiResponse';
@@ -32,6 +33,7 @@ router.get('/config', (_req, res) =>
 router.use('/auth', authRoutes);
 router.use('/', catalogRoutes);
 router.use('/', commerceRoutes);
+router.use('/', paymentRoutes);
 router.use('/account', accountRoutes);
 router.use('/', contentRoutes);
 router.use('/admin', adminRoutes);

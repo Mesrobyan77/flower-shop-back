@@ -18,10 +18,17 @@ import {
   adminUserListQuery,
   createPostSchema,
   updatePostSchema,
+  updateReviewApprovalSchema,
   updateSettingsSchema,
+  updateUserActiveSchema,
   updateUserRoleSchema,
 } from '../validators/content.validator';
-import { changePaymentStatusSchema, changeStatusSchema, orderListQuery } from '../validators/order.validator';
+import {
+  changePaymentStatusSchema,
+  changeStatusSchema,
+  orderListQuery,
+  updateOrderNoteSchema,
+} from '../validators/order.validator';
 import { idParam } from '../validators/common.validator';
 
 const router = Router();
@@ -55,13 +62,13 @@ router.get('/orders', validate({ query: orderListQuery }), admin.listOrders);
 router.get('/orders/:id', validate({ params: idParam }), admin.getOrder);
 router.patch('/orders/:id/status', validate({ params: idParam, body: changeStatusSchema }), admin.changeOrderStatus);
 router.patch('/orders/:id/payment', validate({ params: idParam, body: changePaymentStatusSchema }), admin.changePaymentStatus);
-router.patch('/orders/:id/note', validate({ params: idParam }), admin.updateOrderNote);
+router.patch('/orders/:id/note', validate({ params: idParam, body: updateOrderNoteSchema }), admin.updateOrderNote);
 
 /* users */
 router.get('/users', validate({ query: adminUserListQuery }), admin.listUsers);
 router.get('/users/:id', validate({ params: idParam }), admin.getUser);
 router.patch('/users/:id/role', validate({ params: idParam, body: updateUserRoleSchema }), admin.updateUserRole);
-router.patch('/users/:id/active', validate({ params: idParam }), admin.setUserActive);
+router.patch('/users/:id/active', validate({ params: idParam, body: updateUserActiveSchema }), admin.setUserActive);
 
 /* content */
 router.get('/posts', admin.listPosts);
@@ -70,7 +77,7 @@ router.patch('/posts/:id', validate({ params: idParam, body: updatePostSchema })
 router.delete('/posts/:id', validate({ params: idParam }), admin.deletePost);
 
 router.get('/reviews', admin.listReviews);
-router.patch('/reviews/:id/approval', validate({ params: idParam }), admin.setReviewApproval);
+router.patch('/reviews/:id/approval', validate({ params: idParam, body: updateReviewApprovalSchema }), admin.setReviewApproval);
 
 router.get('/inquiries', admin.listInquiries);
 router.post('/inquiries/:id/answer', validate({ params: idParam, body: answerInquirySchema }), admin.answerInquiry);

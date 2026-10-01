@@ -19,9 +19,12 @@
  */
 import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
-import mongoose from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import { env } from '../config/env';
+import { GUEST_COOKIE } from '../middlewares/guestSession';
+import { Product } from '../models/Product';
 import { RefreshSession } from '../models/RefreshSession';
+import { User } from '../models/User';
 
 const BASE = process.env.SMOKE_API ?? '';
 const REFRESH_COOKIE = 'xf_refresh';
@@ -55,12 +58,16 @@ interface CallOptions {
   body?: unknown;
   token?: string;
   cookie?: string;
+  cookies?: Record<string, string>;
 }
 
 async function call(path: string, options: CallOptions = {}): Promise<HttpResult> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
-  if (options.cookie) headers.Cookie = `${REFRESH_COOKIE}=${options.cookie}`;
+  const cookieParts: string[] = [];
+  if (options.cookie) cookieParts.push(`${REFRESH_COOKIE}=${options.cookie}`);
+  for (const [name, value] of Object.entries(options.cookies ?? {})) cookieParts.push(`${name}=${value}`);
+  if (cookieParts.length) headers.Cookie = cookieParts.join('; ');
 
   const response = await fetch(`${BASE}${path}`, {
     method: options.method ?? 'GET',
@@ -73,18 +80,25 @@ async function call(path: string, options: CallOptions = {}): Promise<HttpResult
   return { status: response.status, body: text ? JSON.parse(text) : null, setCookies };
 }
 
-/** The refresh cookie value a response just handed out, if any. */
-function refreshCookieOf(result: HttpResult): string | undefined {
+/** The value of a freshly set cookie, if `name` is among the Set-Cookie lines. */
+function cookieOf(result: HttpResult, name: string): string | undefined {
   for (const line of result.setCookies) {
     const [pair] = line.split(';');
     const index = pair.indexOf('=');
-    if (index > 0 && pair.slice(0, index).trim() === REFRESH_COOKIE) return pair.slice(index + 1).trim();
+    if (index > 0 && pair.slice(0, index).trim() === name) {
+      const value = pair.slice(index + 1).trim();
+      if (value) return value;
+    }
   }
   return undefined;
 }
 
-function setCookieHeader(result: HttpResult): string | undefined {
-  return result.setCookies.find((line) => line.startsWith(`${REFRESH_COOKIE}=`));
+function refreshCookieOf(result: HttpResult): string | undefined {
+  return cookieOf(result, REFRESH_COOKIE);
+}
+
+function setCookieHeader(result: HttpResult, name = REFRESH_COOKIE): string | undefined {
+  return result.setCookies.find((line) => line.startsWith(`${name}=`));
 }
 
 /** `15m` / `30d` / `1h30m` -> milliseconds (test-side mirror of `ms`). */
@@ -124,11 +138,12 @@ interface Session {
 const runId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
 const TEST_PASSWORD = 'E1-Test-Passw0rd!'; // suite-only credential, never printed
 
-async function register(tag: string): Promise<Session> {
+async function register(tag: string, cookies?: Record<string, string>): Promise<Session> {
   const email = `e1-${runId}-${tag}@example.com`;
   const result = await call('/auth/register', {
     method: 'POST',
     body: { email, password: TEST_PASSWORD, name: `E1 ${tag}`, agreeTerms: true },
+    cookies,
   });
   const cookie = refreshCookieOf(result);
   if (result.status !== 201 || !cookie || !result.body?.data?.accessToken) {
@@ -330,6 +345,92 @@ async function run() {
   } finally {
     await RefreshSession.deleteOne({ _id: ghostJti });
   }
+
+  section('Access token surfaces are Bearer-only');
+  const meBearer = await call('/auth/me', { token: session.accessToken });
+  check(
+    'a protected API answers a valid Bearer token',
+    meBearer.status === 200 && meBearer.body?.data?.id === session.userId,
+    { status: meBearer.status },
+  );
+  const meAnonymous = await call('/auth/me');
+  check('the same API rejects a request without a token', meAnonymous.status === 401, { status: meAnonymous.status });
+  const meViaCookie = await call('/auth/me', { cookies: { accessToken: session.accessToken } });
+  check('an access token sent via cookie is refused (Bearer-only contract)', meViaCookie.status === 401, {
+    status: meViaCookie.status,
+  });
+  const loginHygiene = await call('/auth/login', {
+    method: 'POST',
+    body: { email: session.email, password: TEST_PASSWORD },
+  });
+  const hygieneLine = setCookieHeader(loginHygiene) ?? '';
+  check('the refresh cookie is HttpOnly', /HttpOnly/i.test(hygieneLine));
+  check('the refresh cookie is SameSite=Lax', /SameSite=Lax/i.test(hygieneLine));
+  check('the refresh cookie is scoped to Path=/', /Path=\//.test(hygieneLine));
+  check('login never returns the refresh token in the body', loginHygiene.body?.data?.refreshToken === undefined);
+  const rotatedHygiene = await call('/auth/refresh', { method: 'POST', cookie: refreshCookieOf(loginHygiene)! });
+  check('refresh never returns the refresh token in the body', rotatedHygiene.body?.data?.refreshToken === undefined);
+  check('refresh rotates the cookie on every call', Boolean(refreshCookieOf(rotatedHygiene)));
+
+  section('Guest session and cart merge on login');
+  const product = await Product.create({
+    sku: `E1-${runId}-cart`,
+    slug: `e1-refresh-cart-${runId}`,
+    name: { hy: 'E1 ապրանք', en: 'E1 item', ru: 'E1 товар' },
+    category: new Types.ObjectId(),
+    price: 1000,
+    deliveryMethods: ['quick'],
+    stock: 10,
+    trackStock: true,
+    isActive: true,
+  });
+
+  const guestAdd = await call('/cart/items', {
+    method: 'POST',
+    body: { productId: String(product._id), quantity: 2, deliveryMethod: 'quick' },
+  });
+  const sid = cookieOf(guestAdd, GUEST_COOKIE);
+  check('an anonymous cart write succeeds and mints a guest session', guestAdd.status === 201 && Boolean(sid), {
+    status: guestAdd.status,
+    minted: Boolean(sid),
+  });
+  const sidLine = setCookieHeader(guestAdd, GUEST_COOKIE) ?? '';
+  check('the guest cookie is HttpOnly and SameSite=Lax', /HttpOnly/i.test(sidLine) && /SameSite=Lax/i.test(sidLine));
+  check('a guest request never touches the refresh cookie', setCookieHeader(guestAdd, REFRESH_COOKIE) === undefined);
+  const guestView = await call('/cart', { cookies: { [GUEST_COOKIE]: sid! } });
+  check('the guest cart persists across requests', guestView.status === 200 && guestView.body?.data?.itemCount === 1, {
+    status: guestView.status,
+    itemCount: guestView.body?.data?.itemCount,
+  });
+
+  const merged = await register('merge', { [GUEST_COOKIE]: sid! });
+  const mergedView = await call('/cart', { token: merged.accessToken });
+  check(
+    'registering with a guest cookie merges the cart into the member cart',
+    mergedView.body?.data?.itemCount === 1,
+    { itemCount: mergedView.body?.data?.itemCount },
+  );
+  const guestAfter = await call('/cart', { cookies: { [GUEST_COOKIE]: sid! } });
+  check('the guest cart is emptied by the merge', guestAfter.body?.data?.itemCount === 0, {
+    itemCount: guestAfter.body?.data?.itemCount,
+  });
+
+  section('Admin endpoints stay server-gated');
+  const adminAnonymous = await call('/admin/stats');
+  check('admin API rejects an anonymous request', adminAnonymous.status === 401, { status: adminAnonymous.status });
+  const adminAsUser = await call('/admin/stats', { token: session.accessToken });
+  check('admin API rejects a regular member token', adminAsUser.status === 403, { status: adminAsUser.status });
+  await User.updateOne({ _id: session.userId }, { $set: { role: 'admin' } });
+  const adminRelogin = await call('/auth/login', {
+    method: 'POST',
+    body: { email: session.email, password: TEST_PASSWORD },
+  });
+  const adminOk = await call('/admin/stats', { token: adminRelogin.body?.data?.accessToken });
+  check('admin API accepts an admin token after the role change', adminOk.status === 200, {
+    status: adminOk.status,
+    reloginStatus: adminRelogin.status,
+  });
+  await User.updateOne({ _id: session.userId }, { $set: { role: 'user' } });
 }
 
 main().catch((err) => {

@@ -247,7 +247,7 @@ async function main() {
   });
   check('checkout creates the order', checkout.status === 201, checkout.body);
 
-  const order = checkout.body.data;
+  const order = checkout.body.data.order;
   check('payment method is cash on delivery', order.paymentMethod === 'cash_on_delivery');
   check('payment starts unpaid', order.paymentStatus === 'pending');
   check('order starts pending', order.status === 'pending');

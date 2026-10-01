@@ -4,7 +4,7 @@ import * as subscriptionController from '../controllers/subscription.controller'
 import { requireAuth } from '../middlewares/auth';
 import { validate } from '../middlewares/validate';
 import { addressSchema } from '../validators/order.validator';
-import { subscribeSchema } from '../validators/content.validator';
+import { subscribeSchema, subscriptionActionParams } from '../validators/content.validator';
 import { idParam } from '../validators/common.validator';
 
 const router = Router();
@@ -24,6 +24,6 @@ router.get('/recently-viewed', accountController.recentlyViewed);
 
 router.get('/subscriptions', subscriptionController.mine);
 router.post('/subscriptions', validate({ body: subscribeSchema }), subscriptionController.subscribe);
-router.post('/subscriptions/:id/:action', subscriptionController.setStatus);
+router.post('/subscriptions/:id/:action', validate({ params: subscriptionActionParams }), subscriptionController.setStatus);
 
 export default router;

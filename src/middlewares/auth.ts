@@ -7,8 +7,9 @@ import type { UserRole } from '../constants';
 function extractToken(req: AuthedRequest): string | null {
   const header = req.headers.authorization;
   if (header && header.startsWith('Bearer ')) return header.slice(7).trim();
-  const cookie = (req as unknown as { cookies?: Record<string, string> }).cookies?.accessToken;
-  return cookie ?? null;
+  // Access tokens are header-only by contract; cookies carry the refresh and
+  // guest sessions, never an access token.
+  return null;
 }
 
 /** Hard gate: 401 when no valid access token is present. */
