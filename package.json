@@ -2,7 +2,7 @@
   "name": "anahit-flower-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Anahit Flower Design - commerce API (Express + TypeScript + MongoDB + Cloudinary)",
+  "description": "AURELIA - commerce API (Express + TypeScript + MongoDB + Cloudinary)",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch server.ts",

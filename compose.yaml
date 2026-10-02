@@ -1,4 +1,4 @@
-# Production composition for the Anahit Flower stack (E5).
+# Production composition for the AURELIA stack (E5).
 #
 # Scope: the two application services only. MongoDB stays on Atlas (external) and
 # media stays on Cloudinary, so there is no database container and no volume - both

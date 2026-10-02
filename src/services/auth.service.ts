@@ -204,20 +204,31 @@ export async function changePassword(
   );
 }
 
-/** A basket built before signing in must survive the login. */
+/**
+ * A basket built before signing in must survive the login - and because this
+ * also runs on every cart/checkout request, so must a basket built while the
+ * access token was momentarily absent (session bootstrap or silent expiry).
+ *
+ * The claim is one atomic update that empties the guest basket and hands its
+ * items to exactly one caller, so concurrent merges for the same cookie can
+ * never push the same items twice. The member side is a single upsert; two
+ * first merges racing the `user` unique index resolve the E11000 the same way
+ * `getOrCreateCart` does - the loser re-runs without upsert and lands on the
+ * winner's cart (checkpoint E6.1).
+ */
 export async function mergeGuestCart(sessionId: string, userId: string): Promise<void> {
-  const guestCart = await Cart.findOne({ sessionId });
-  if (!guestCart || guestCart.items.length === 0) return;
+  const claimed = await Cart.findOneAndUpdate({ sessionId, 'items.0': { $exists: true } }, { $set: { items: [] } });
+  if (!claimed || claimed.items.length === 0) return;
 
-  const userCart = await Cart.findOne({ user: userId });
-  if (!userCart) {
-    guestCart.user = userId as never;
-    guestCart.sessionId = undefined;
-    await guestCart.save();
-    return;
+  const items = claimed.items.map((item) => item.toObject());
+  const pushIntoMember = () =>
+    Cart.findOneAndUpdate({ user: userId }, { $push: { items: { $each: items } } }, { upsert: true });
+
+  try {
+    await pushIntoMember();
+  } catch (error) {
+    if ((error as { code?: number }).code !== 11000) throw error;
+    await pushIntoMember();
   }
-
-  userCart.items.push(...guestCart.items);
-  await userCart.save();
-  await guestCart.deleteOne();
+  await claimed.deleteOne();
 }

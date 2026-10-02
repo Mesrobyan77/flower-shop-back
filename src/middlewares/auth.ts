@@ -36,6 +36,26 @@ export function optionalAuth(req: AuthedRequest, _res: Response, next: NextFunct
   return next();
 }
 
+/**
+ * Identity-sensitive variant for routes whose behaviour depends on who the
+ * caller is (cart, checkout). An absent token still means guest, but a PRESENT
+ * token that fails verification is a hard 401 like requireAuth - never a
+ * silent downgrade to guest identity, which would read or write the wrong
+ * basket. The client answers the 401 with one silent refresh and retry, so an
+ * expired access token rotates instead of flipping the request to the guest
+ * cart.
+ */
+export function optionalAuthStrict(req: AuthedRequest, _res: Response, next: NextFunction) {
+  const token = extractToken(req);
+  if (!token) return next();
+  try {
+    req.user = verifyAccessToken(token);
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
 export function requireRole(...roles: UserRole[]) {
   return (req: AuthedRequest, _res: Response, next: NextFunction) => {
     if (!req.user) return next(ApiError.unauthorized());

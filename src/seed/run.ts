@@ -132,7 +132,7 @@ async function seedUsers() {
     await User.create({
       email: env.SEED_ADMIN_EMAIL,
       password: env.SEED_ADMIN_PASSWORD,
-      name: 'Anahit Flower Design Admin',
+      name: 'AURELIA Admin',
       phone: '+374 10 500 700',
       role: 'admin',
     });
