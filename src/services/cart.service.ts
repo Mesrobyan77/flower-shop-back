@@ -83,6 +83,9 @@ export async function getOrCreateCart(owner: CartOwner): Promise<CartDocument> {
   }
 }
 
+/** Option groups the API fills from the dedicated delivery fields, never required from the caller. */
+const DELIVERY_GROUPS = new Set(['delivery_method', 'delivery_date', 'delivery_time']);
+
 /**
  * Resolves the raw option payload against the product definition so prices come
  * from the catalogue, never from the client.
@@ -98,7 +101,8 @@ function resolveOptions(
    * Delivery method, date and time are first-class fields on the request as well
    * as option groups on the product (the reference showed them inside the same
    * purchase sheet). Fill those groups from the dedicated fields so a caller
-   * never has to send the same value twice.
+   * never has to send the same value twice. Date and time are collected on
+   * checkout, so a line may legitimately arrive without them.
    */
   const raw = [...(input.options ?? [])];
   const ensure = (key: string, value: { optionKey?: string; value?: string }) => {
@@ -113,7 +117,9 @@ function resolveOptions(
     const supplied = raw.find((o) => o.groupKey === group.key);
 
     if (!supplied || (!supplied.optionKey && !supplied.value)) {
-      if (group.required) throw ApiError.badRequest(`"${pickLocale(group.label, locale)}" is required`);
+      if (group.required && !DELIVERY_GROUPS.has(group.key)) {
+        throw ApiError.badRequest(`"${pickLocale(group.label, locale)}" is required`);
+      }
       continue;
     }
 
