@@ -5,6 +5,7 @@ import { Media, type MediaDocument } from '../models/Media';
 import { ApiError } from '../utils/ApiError';
 import { randomToken } from '../utils/codes';
 import { bufferMatchesMimeType } from '../utils/imageType';
+import { svgRejectedReason } from '../utils/svg';
 import { slugify } from '../utils/slug';
 
 export interface UploadInput {
@@ -47,6 +48,14 @@ function uploadBuffer(buffer: Buffer, folder: string, publicId: string): Promise
   });
 }
 
+/**
+ * A storage-side rejection is a rejected upload, not an unexplained 500: it keeps
+ * the reason in the server log and carries a stable code the admin UI can localize.
+ */
+function uploadRejected(reason: string, status = 400): ApiError {
+  return new ApiError(status, `Upload rejected: ${reason}`, undefined, 'UPLOAD_FAILED');
+}
+
 export async function uploadMedia(input: UploadInput): Promise<MediaDocument> {
   /**
    * The multipart part header is client-supplied, so the bytes are checked against
@@ -57,10 +66,27 @@ export async function uploadMedia(input: UploadInput): Promise<MediaDocument> {
     throw ApiError.badRequest('The uploaded file does not look like the image type it declares');
   }
 
-  if (!ensureCloudinary()) throw ApiError.internal('Media storage is not configured, please try again later');
+  /**
+   * An SVG the byte sniff accepted is still only as safe as its markup, and the
+   * delivered asset opens in a top-level tab. Executable constructs are refused
+   * here rather than stored and served from the media host.
+   */
+  if (input.mimeType === 'image/svg+xml') {
+    const reason = svgRejectedReason(input.buffer);
+    if (reason) throw ApiError.badRequest(`The SVG was refused because ${reason}`);
+  }
+
+  if (!ensureCloudinary()) throw uploadRejected('media storage is not configured on this server', 503);
 
   const folder = slugify(input.folder ?? 'misc') || 'misc';
-  const result = await uploadBuffer(input.buffer, scopedFolder(folder), buildPublicId(input.originalName));
+  const publicId = buildPublicId(input.originalName);
+
+  let result: UploadApiResponse;
+  try {
+    result = await uploadBuffer(input.buffer, scopedFolder(folder), publicId);
+  } catch (err) {
+    throw uploadRejected(err instanceof Error ? err.message : 'the image storage did not accept the file');
+  }
 
   return Media.create({
     key: result.public_id,

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { toDateKey } from './dateKey';
 
 const ALPHABET = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
@@ -9,12 +10,9 @@ function randomChars(n: number): string {
   return out;
 }
 
-/** Human-quotable order number: XF-20260821-9K4T2 */
+/** Human-quotable order number: XF-20260821-9K4T2 (dated on the shop calendar) */
 export function generateOrderCode(date = new Date()): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `XF-${y}${m}${d}-${randomChars(5)}`;
+  return `XF-${toDateKey(date).replace(/-/g, '')}-${randomChars(5)}`;
 }
 
 /** Internal product SKU: XF-A1B2C3 */

@@ -27,12 +27,14 @@ function toNode(doc: CategoryDocument): CategoryNode {
   };
 }
 
-/** One query, assembled in memory: the tree is small and read on every page. */
+/**
+ * One query, assembled in memory: the tree is small and read on every page.
+ * `navOnly` selects which TOP-level boards appear in the navigation - their
+ * sub-categories travel with them, because the mega menu's second level is
+ * built from exactly those children (F-31).
+ */
 export async function categoryTree(navOnly = false): Promise<CategoryNode[]> {
-  const filter: Record<string, unknown> = { isActive: true };
-  if (navOnly) filter.showInNav = true;
-
-  const docs = await Category.find(filter).sort({ depth: 1, order: 1 });
+  const docs = await Category.find({ isActive: true }).sort({ depth: 1, order: 1 });
   const byId = new Map<string, CategoryNode>();
   const roots: CategoryNode[] = [];
 
@@ -42,7 +44,7 @@ export async function categoryTree(navOnly = false): Promise<CategoryNode[]> {
     const node = byId.get(String(doc._id))!;
     const parentId = doc.parent ? String(doc.parent) : null;
     if (parentId && byId.has(parentId)) byId.get(parentId)!.children.push(node);
-    else roots.push(node);
+    else if (!navOnly || doc.showInNav) roots.push(node);
   }
 
   return roots;

@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { Cart, type CartDocument, type SelectedOption } from '../models/Cart';
+import { Cart, type CartDocument, type CartItemSubdoc, type SelectedOption } from '../models/Cart';
 import { Product, type ProductDocument } from '../models/Product';
 import { User } from '../models/User';
 import { ApiError } from '../utils/ApiError';
@@ -105,6 +105,7 @@ function resolveOptions(
    * checkout, so a line may legitimately arrive without them.
    */
   const raw = [...(input.options ?? [])];
+  const requestedGroupKeys = new Set(raw.map((o) => o.groupKey));
   const ensure = (key: string, value: { optionKey?: string; value?: string }) => {
     if (!raw.some((o) => o.groupKey === key)) raw.push({ groupKey: key, ...value });
   };
@@ -112,6 +113,11 @@ function resolveOptions(
   ensure('delivery_method', { optionKey: input.deliveryMethod });
   if (input.deliveryDate) ensure('delivery_date', { value: input.deliveryDate });
   if (input.timeSlot) ensure('delivery_time', { value: input.timeSlot });
+
+  const knownGroupKeys = new Set(product.optionGroups.map((group) => group.key));
+  for (const key of requestedGroupKeys) {
+    if (!knownGroupKeys.has(key)) throw ApiError.badRequest(`"${key}" is not an option group of this product`);
+  }
 
   for (const group of product.optionGroups) {
     const supplied = raw.find((o) => o.groupKey === group.key);
@@ -149,6 +155,35 @@ function resolveOptions(
   return selected;
 }
 
+/**
+ * Two adds describe the same basket line only when everything the customer chose
+ * matches: the variant options, the delivery slot and the card personalization.
+ * Anything else has to stay on its own line, because those fields are per-line.
+ */
+function isSameLine(line: CartItemSubdoc, input: AddItemInput, options: SelectedOption[]) {
+  const text = (value?: string) => (value ?? '').trim();
+  const sameDate = (a?: Date, b?: string) => {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    return a.getTime() === fromDateKey(b).getTime();
+  };
+  const fingerprint = (list: SelectedOption[]) =>
+    [...list]
+      .sort((a, b) => a.groupKey.localeCompare(b.groupKey))
+      .map((o) => `${o.groupKey}|${o.optionKey ?? ''}|${text(o.value)}|${o.priceDelta}`)
+      .join(';');
+
+  return (
+    line.deliveryMethod === input.deliveryMethod &&
+    sameDate(line.deliveryDate, input.deliveryDate) &&
+    text(line.timeSlot) === text(input.timeSlot) &&
+    text(line.ribbonText) === text(input.ribbonText) &&
+    text(line.senderName) === text(input.senderName) &&
+    text(line.cardMessage) === text(input.cardMessage) &&
+    fingerprint(line.options) === fingerprint(options)
+  );
+}
+
 export async function addItem(owner: CartOwner, input: AddItemInput, locale: Locale = DEFAULT_LOCALE) {
   const product = await Product.findById(input.productId);
   if (!product || !product.isActive) throw ApiError.notFound('Product not found');
@@ -161,6 +196,27 @@ export async function addItem(owner: CartOwner, input: AddItemInput, locale: Loc
 
   const options = resolveOptions(product, input, locale);
   const cart = await getOrCreateCart(owner);
+
+  const twin = cart.items.find((line) => String(line.product) === String(product._id) && isSameLine(line, input, options));
+  const mergedQuantity = (twin?.quantity ?? 0) + input.quantity;
+  if (mergedQuantity > product.maxOrderQty) throw ApiError.badRequest(`Maximum quantity is ${product.maxOrderQty}`);
+
+  /**
+   * Stock is a property of the product, not of the line, so the whole basket's
+   * demand for this product has to fit inside what is available.
+   */
+  const demandOnOtherLines = cart.items
+    .filter((line) => String(line.product) === String(product._id) && line !== twin)
+    .reduce((acc, line) => acc + line.quantity, 0);
+  if (product.trackStock && product.stock < mergedQuantity + demandOnOtherLines) {
+    throw ApiError.badRequest('Not enough stock available');
+  }
+
+  if (twin) {
+    twin.quantity = mergedQuantity;
+    await cart.save();
+    return cart;
+  }
 
   cart.items.push({
     _id: new Types.ObjectId(),

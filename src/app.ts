@@ -7,12 +7,13 @@ import morgan from 'morgan';
 import { env } from './config/env';
 import { errorHandler, notFoundHandler } from './middlewares/error';
 import { apiLimiter } from './middlewares/rateLimit';
+import { ApiError } from './utils/ApiError';
 import routes from './routes';
 
 export function createApp(): Express {
   const app = express();
 
-  app.set('trust proxy', 1);
+  app.set('trust proxy', env.TRUST_PROXY_HOPS);
   // Flat-string query params only: object/array params (the MongoDB operator
   // injection vector) never reach controllers, validated routes or not.
   app.set('query parser', 'simple');
@@ -28,7 +29,9 @@ export function createApp(): Express {
     cors({
       origin(origin, callback) {
         if (!origin || env.corsOrigins.includes(origin)) return callback(null, true);
-        return callback(new Error(`Origin ${origin} is not allowed`));
+        // A refused origin is the caller's mistake, not ours: answer 403 without
+        // ever reflecting the value back as an Access-Control-Allow-* header.
+        return callback(ApiError.forbidden('This origin is not allowed'));
       },
       credentials: true,
     }),

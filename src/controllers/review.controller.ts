@@ -2,26 +2,12 @@ import type { Request, Response } from 'express';
 import { Order } from '../models/Order';
 import { Product } from '../models/Product';
 import { Review } from '../models/Review';
+import { refreshProductRating } from '../services/rating.service';
 import { ApiError } from '../utils/ApiError';
 import { asyncHandler } from '../utils/asyncHandler';
 import { buildPage, parsePaging } from '../utils/pagination';
 import { created, noContent, ok, paginated } from '../utils/apiResponse';
 import type { AuthedRequest } from '../types';
-
-async function refreshProductRating(productId: string) {
-  const product = await Product.findById(productId);
-  if (!product) return;
-
-  const [row] = await Review.aggregate<{ avg: number; count: number }>([
-    { $match: { product: product._id, isApproved: true } },
-    { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
-  ]);
-
-  await Product.updateOne(
-    { _id: productId },
-    { $set: { ratingAverage: Math.round((row?.avg ?? 0) * 10) / 10, ratingCount: row?.count ?? 0 } },
-  );
-}
 
 export const listForProduct = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePaging(req.query);
@@ -43,8 +29,16 @@ export const listForProduct = asyncHandler(async (req: Request, res: Response) =
     ]),
   ]);
 
+  /** The summary is computed from the same approved set the list shows, never from a cached field. */
+  const approvedCount = distribution.reduce((acc, row) => acc + row.count, 0);
+  const approvedSum = distribution.reduce((acc, row) => acc + row._id * row.count, 0);
+
   return paginated(res, buildPage(items, total, page, limit), {
-    summary: { average: product.ratingAverage, count: product.ratingCount, distribution },
+    summary: {
+      average: approvedCount ? Math.round((approvedSum / approvedCount) * 10) / 10 : 0,
+      count: approvedCount,
+      distribution,
+    },
   });
 });
 
@@ -81,8 +75,26 @@ export const remove = asyncHandler(async (req: AuthedRequest, res: Response) => 
   return noContent(res);
 });
 
-export const markHelpful = asyncHandler(async (req: Request, res: Response) => {
-  const review = await Review.findByIdAndUpdate(req.params.id, { $inc: { helpfulCount: 1 } }, { new: true });
-  if (!review) throw ApiError.notFound('Review not found');
+/**
+ * One vote per signed-in account. The claim and the counter move in a single
+ * atomic update, so two concurrent clicks by the same account still add one,
+ * and an anonymous caller - who could mint unlimited identities for free -
+ * never reaches this code at all.
+ */
+export const markHelpful = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const voter = req.user!.sub;
+  const review = await Review.findOneAndUpdate(
+    { _id: req.params.id, helpfulBy: { $ne: voter } },
+    { $addToSet: { helpfulBy: voter }, $inc: { helpfulCount: 1 } },
+    { new: true },
+  );
+
+  if (!review) {
+    const existing = await Review.findById(req.params.id).select('helpfulCount');
+    if (!existing) throw ApiError.notFound('Review not found');
+    // Already voted: report the unchanged total rather than a second increment.
+    return ok(res, { helpfulCount: existing.helpfulCount });
+  }
+
   return ok(res, { helpfulCount: review.helpfulCount });
 });

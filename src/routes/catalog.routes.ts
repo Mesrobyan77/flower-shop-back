@@ -31,7 +31,7 @@ router.get('/products/:slug/inquiries', validate({ params: slugParam }), optiona
 
 router.post('/reviews', requireAuth, writeLimiter, validate({ body: createReviewSchema }), reviewController.create);
 router.delete('/reviews/:id', requireAuth, validate({ params: idParam }), reviewController.remove);
-router.post('/reviews/:id/helpful', writeLimiter, validate({ params: idParam }), reviewController.markHelpful);
+router.post('/reviews/:id/helpful', requireAuth, writeLimiter, validate({ params: idParam }), reviewController.markHelpful);
 
 router.post('/inquiries', requireAuth, writeLimiter, validate({ body: createInquirySchema }), inquiryController.create);
 router.get('/inquiries/mine', requireAuth, inquiryController.mine);

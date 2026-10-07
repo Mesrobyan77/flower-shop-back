@@ -13,6 +13,7 @@ export interface ReviewDocument extends Document {
   isVerified: boolean;
   isApproved: boolean;
   helpfulCount: number;
+  helpfulBy: Types.ObjectId[];
   adminReply?: { body: string; repliedAt: Date; repliedBy: Types.ObjectId };
   createdAt: Date;
   updatedAt: Date;
@@ -30,6 +31,12 @@ const reviewSchema = new Schema<ReviewDocument>(
     isVerified: { type: Boolean, default: false },
     isApproved: { type: Boolean, default: true, index: true },
     helpfulCount: { type: Number, default: 0 },
+    /**
+     * Who has already voted this review helpful, so a second click by the same
+     * account is a no-op instead of another increment. Never sent to a client -
+     * a voter's identity is their own business.
+     */
+    helpfulBy: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [], select: false },
     adminReply: {
       body: { type: String },
       repliedAt: { type: Date },

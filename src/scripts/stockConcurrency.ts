@@ -244,11 +244,35 @@ async function main() {
 
   section('3. Duplicate lines of one product - validated in total');
 
-  const split = await newProduct(adminToken, 'split', 3, true);
+  /**
+   * Two lines of the same product are the oversell attempt: the guard has to
+   * count the basket, not the line. The basket is built while the stock still
+   * covers it and the stock is cut afterwards, because adding a fourth unit to a
+   * three-unit product is already refused at the cart door - that assertion is
+   * checked first so the two guards cannot be confused for one another.
+   */
+  const tight = await newProduct(adminToken, 'tight', 3, true);
+  const tightSession = guest('tight');
+  await addToCart(tightSession, tight.id, 2, 'line one');
+  const tightSecondAdd = await addToCart(tightSession, tight.id, 2, 'line two');
+  check(
+    'a fourth unit cannot be added to a product holding three',
+    tightSecondAdd.status === 400 || tightSecondAdd.status === 409,
+    tightSecondAdd.body,
+  );
+  const tightUnchanged = await call('/cart', { sessionId: tightSession });
+  check('the refused add left that basket unchanged', tightUnchanged.body.data.items.length === 1, tightUnchanged.body.data.items);
+
+  const split = await newProduct(adminToken, 'split', 10, true);
   const splitSession = guest('split');
   await addToCart(splitSession, split.id, 2, 'line one');
   await addToCart(splitSession, split.id, 2, 'line two');
 
+  const splitLines = await call('/cart', { sessionId: splitSession });
+  const splitTotal = (splitLines.body.data.items as any[]).reduce((acc, line) => acc + line.quantity, 0);
+  check('the basket really holds two separate lines of two', splitLines.body.data.items.length === 2 && splitTotal === 4, splitLines.body.data.items);
+
+  await setStock(adminToken, split.id, 3); // someone else bought the rest in the meantime
   const ordersBeforeSplit = await orderCount(adminToken);
   const splitRefused = await checkout(splitSession);
   check(

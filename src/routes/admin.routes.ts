@@ -15,8 +15,10 @@ import {
 } from '../validators/catalog.validator';
 import {
   answerInquirySchema,
+  answerReviewSchema,
   adminUserListQuery,
   createPostSchema,
+  inquiryStatusSchema,
   updatePostSchema,
   updateReviewApprovalSchema,
   updateSettingsSchema,
@@ -78,12 +80,16 @@ router.delete('/posts/:id', validate({ params: idParam }), admin.deletePost);
 
 router.get('/reviews', admin.listReviews);
 router.patch('/reviews/:id/approval', validate({ params: idParam, body: updateReviewApprovalSchema }), admin.setReviewApproval);
+router.post('/reviews/:id/reply', validate({ params: idParam, body: answerReviewSchema }), admin.replyToReview);
+router.delete('/reviews/:id', validate({ params: idParam }), admin.deleteReview);
 
 router.get('/inquiries', admin.listInquiries);
 router.post('/inquiries/:id/answer', validate({ params: idParam, body: answerInquirySchema }), admin.answerInquiry);
+router.patch('/inquiries/:id/status', validate({ params: idParam, body: inquiryStatusSchema }), admin.setInquiryStatus);
 
 /* media */
 router.get('/media', admin.listMedia);
+router.get('/media/folders', admin.mediaFolders);
 router.post('/media/upload', writeLimiter, upload.array('files', 10), admin.upload);
 router.delete('/media/:id', validate({ params: idParam }), admin.removeMedia);
 

@@ -73,6 +73,12 @@ export function gradeByKey(key: string) {
   return MEMBER_GRADES.find((g) => g.key === key) ?? MEMBER_GRADES[0];
 }
 
+/**
+ * Points a brand-new account starts with. The register form, the product page and
+ * the promo bar all advertise this amount, so the credit and the copy read one value.
+ */
+export const SIGNUP_BONUS_POINTS = 2_000;
+
 /** Reference offered 09:00–22:00 in 30-minute steps; quick courier works 10:00–20:00. */
 export const TIME_SLOTS: string[] = (() => {
   const out: string[] = [];

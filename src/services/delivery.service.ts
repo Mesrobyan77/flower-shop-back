@@ -9,18 +9,19 @@ import {
   type DeliveryMethod,
 } from '../constants';
 import { ApiError } from '../utils/ApiError';
-import { fromDateKey, startOfLocalDay, toDateKey } from '../utils/dateKey';
+import { fromDateKey, shopHour, shopWeekday, startOfShopDay, toDateKey } from '../utils/dateKey';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const startOfDay = startOfLocalDay;
+const startOfDay = startOfShopDay;
 
 function addDays(d: Date, days: number): Date {
   return new Date(d.getTime() + days * DAY_MS);
 }
 
+/** Weekends are the shop's (Armenia) weekends, never the process clock's. */
 function isWeekend(d: Date): boolean {
-  const day = d.getDay();
+  const day = shopWeekday(d);
   return day === 0 || day === 6;
 }
 
@@ -33,7 +34,7 @@ export function earliestDeliveryDate(method: DeliveryMethod, now = new Date()): 
   if (method === 'pickup') return startOfDay(now);
 
   if (method === 'quick') {
-    let candidate = now.getHours() >= QUICK_CUTOFF_HOUR ? addDays(startOfDay(now), 1) : startOfDay(now);
+    let candidate = shopHour(now) >= QUICK_CUTOFF_HOUR ? addDays(startOfDay(now), 1) : startOfDay(now);
     while (isWeekend(candidate)) candidate = addDays(candidate, 1);
     return candidate;
   }

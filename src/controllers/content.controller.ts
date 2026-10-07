@@ -19,8 +19,9 @@ export const listPosts = asyncHandler(async (req: Request, res: Response) => {
     filter.$or = [{ 'title.hy': rx }, { 'title.en': rx }, { 'title.ru': rx }];
   }
 
+  // FAQ/notice/events surfaces render the body straight from this list, so it must not be projected away.
   const [items, total] = await Promise.all([
-    Post.find(filter).sort({ isPinned: -1, publishedAt: -1 }).skip(skip).limit(limit).select('-body').lean(),
+    Post.find(filter).sort({ isPinned: -1, publishedAt: -1 }).skip(skip).limit(limit).lean(),
     Post.countDocuments(filter),
   ]);
 

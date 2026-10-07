@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import { User, type UserDocument } from '../models/User';
 import { Cart } from '../models/Cart';
 import { RefreshSession } from '../models/RefreshSession';
 import { ApiError } from '../utils/ApiError';
 import { signAccessToken, signRefreshToken, tokenTtlMs, verifyRefreshToken } from '../utils/jwt';
-import { gradeByKey } from '../constants';
+import { SIGNUP_BONUS_POINTS, gradeByKey } from '../constants';
 
 export interface RegisterInput {
   email: string;
@@ -89,6 +90,8 @@ export async function register(input: RegisterInput, sessionId?: string): Promis
     name: input.name,
     phone: input.phone,
     marketingOptIn: input.marketingOptIn ?? false,
+    // Creation-time balance, so it never participates in the concurrent $inc paths.
+    points: SIGNUP_BONUS_POINTS,
   });
 
   if (sessionId) await mergeGuestCart(sessionId, String(user._id));
@@ -96,13 +99,19 @@ export async function register(input: RegisterInput, sessionId?: string): Promis
   return { user: toPublicUser(user), ...(await issueSession(user)) };
 }
 
+/**
+ * A real, never-matching bcrypt hash of a password nobody can present. An unknown
+ * email pays the same verification cost as a wrong password, so response time no
+ * longer answers "is this address registered?" before the credentials are checked.
+ */
+const TIMING_EQUALISER_HASH = '$2a$12$znwCuFOjZe4ySLcsG7W2wOy3qkjoBSrCDGwq29pl1Yyei3GJmKglm';
+
 export async function login(email: string, password: string, sessionId?: string): Promise<AuthResult> {
   const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-  if (!user) throw ApiError.unauthorized('Email or password is incorrect');
+  const matches = user ? await user.comparePassword(password) : await bcrypt.compare(password, TIMING_EQUALISER_HASH);
+  if (!user || !matches) throw ApiError.unauthorized('Email or password is incorrect');
+  // Only the person who produced the password learns the account is disabled.
   if (!user.isActive) throw ApiError.forbidden('This account has been deactivated');
-
-  const matches = await user.comparePassword(password);
-  if (!matches) throw ApiError.unauthorized('Email or password is incorrect');
 
   user.lastLoginAt = new Date();
   await user.save();

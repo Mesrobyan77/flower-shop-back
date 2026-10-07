@@ -21,6 +21,7 @@ import {
   User,
 } from '../models';
 import { skuFromSlug } from '../utils/codes';
+import { syncAllProductRatings } from '../services/rating.service';
 import { seedCategories, seedCollections } from './data/categories';
 import { seedPosts, seedPlans, seedSettings } from './data/content';
 import { candyAddon, chocolateAddon, commonOptionGroups, seedProducts, sizeOption, type SeedProduct } from './data/products';
@@ -303,8 +304,6 @@ async function seedCatalog(
         isActive: true,
         isFeatured: item.isFeatured ?? false,
         sameDayAvailable: methods.includes('quick'),
-        ratingAverage: item.rating ?? 0,
-        ratingCount: item.reviews ?? 0,
         soldCount: item.sold ?? 0,
         publishedAt: new Date(),
       },
@@ -383,7 +382,7 @@ async function seedReviews() {
   const demo = await User.findOne({ email: 'demo@anahit-flower.am' });
   if (!demo) return;
 
-  const products = await Product.find({ ratingCount: { $gt: 0 } }).limit(8);
+  const products = await Product.find().sort({ slug: 1 }).limit(8);
   const bodies = [
     {
       rating: 5,
@@ -426,6 +425,9 @@ async function seedReviews() {
       { upsert: true, setDefaultsOnInsert: true },
     );
   }
+
+  /** The advertised rating comes from these documents, never from the catalogue dataset. */
+  await syncAllProductRatings();
 }
 
 /** Recomputes counts from the catalogue so repeated seeding stays accurate. */

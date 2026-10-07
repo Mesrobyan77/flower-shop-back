@@ -35,7 +35,7 @@ export const collections = asyncHandler(async (req: Request, res: Response) => {
   // The home page renders these as product rails, so the products come back
   // populated rather than as bare ids.
   const items = await Collection.find(filter)
-    .sort({ order: 1 })
+    .sort({ order: 1, _id: 1 })
     .populate({ path: 'products', match: { isActive: true }, select: CARD_FIELDS })
     .lean();
 

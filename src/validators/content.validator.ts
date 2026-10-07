@@ -28,15 +28,19 @@ export const createInquirySchema = z.object({
 
 export const answerInquirySchema = z.object({ body: z.string().min(2).max(3000) });
 
+export const answerReviewSchema = z.object({ body: z.string().min(2).max(3000) });
+
+export const inquiryStatusSchema = z.object({ status: z.enum(['open', 'answered', 'closed']) });
+
 export const createPostSchema = z.object({
   type: z.enum(POST_TYPES),
   slug: z.string().optional(),
   title: localizedInput,
-  excerpt: localizedOptionalInput.optional(),
+  excerpt: localizedOptionalInput.optional().nullable(),
   body: localizedInput,
-  coverImage: imageUrl.optional(),
+  coverImage: imageUrl.optional().nullable(),
   tags: z.array(z.string().max(40)).default([]),
-  category: z.string().max(60).optional(),
+  category: z.string().max(60).optional().nullable(),
   isPublished: z.boolean().default(true),
   isPinned: z.boolean().default(false),
   startsAt: z.string().optional(),
@@ -79,8 +83,8 @@ export const updateSettingsSchema = z.object({
   heroSlides: z
     .array(
       z.object({
-        image: z.string(),
-        mobileImage: z.string().optional(),
+        image: imageUrl,
+        mobileImage: imageUrl.optional().nullable(),
         title: localizedOptionalInput.optional(),
         subtitle: localizedOptionalInput.optional(),
         ctaLabel: localizedOptionalInput.optional(),
@@ -93,7 +97,7 @@ export const updateSettingsSchema = z.object({
   themeTiles: z
     .array(
       z.object({
-        image: z.string().optional(),
+        image: imageUrl.optional().nullable(),
         title: localizedInput,
         subtitle: localizedOptionalInput.optional(),
         href: z.string(),
@@ -122,6 +126,8 @@ export const updateSettingsSchema = z.object({
       telegram: z.string().optional(),
     })
     .optional(),
+  /** The `updatedAt` the admin panel loaded, so a stale save is refused (F-95). */
+  expectedUpdatedAt: z.string().optional(),
 });
 
 export const adminUserListQuery = z.object({

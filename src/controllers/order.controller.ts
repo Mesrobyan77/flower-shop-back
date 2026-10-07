@@ -7,6 +7,7 @@ import { ApiError } from '../utils/ApiError';
 import { asyncHandler } from '../utils/asyncHandler';
 import { toDateKey } from '../utils/dateKey';
 import { created, ok, paginated } from '../utils/apiResponse';
+import { customerOrderView, customerOrderListView } from '../utils/customerOrderView';
 import { parsePaging } from '../utils/pagination';
 import { DELIVERY_METHODS, REGIONS, type DeliveryMethod, type Locale } from '../constants';
 import type { AuthedRequest } from '../types';
@@ -17,33 +18,33 @@ export const checkout = asyncHandler(async (req: AuthedRequest, res: Response) =
     sessionId: (req as Request & { sessionId?: string }).sessionId,
     locale: (req.query.locale as Locale) || undefined,
   });
-  return created(res, result);
+  return created(res, { ...result, order: customerOrderView(result.order) });
 });
 
 export const myOrders = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { page, limit } = parsePaging(req.query);
   const q = req.query as Record<string, string | undefined>;
   const result = await findOrders({ page, limit, userId: req.user!.sub, status: q.status as never });
-  return paginated(res, result);
+  return paginated(res, { ...result, items: customerOrderListView(result.items) });
 });
 
 export const myOrderDetail = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const order = await Order.findOne({ code: req.params.code, user: req.user!.sub });
   if (!order) throw ApiError.notFound('Order not found');
-  return ok(res, order);
+  return ok(res, customerOrderView(order));
 });
 
 export const cancelMine = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const order = await Order.findOne({ code: req.params.code, user: req.user!.sub });
   if (!order) throw ApiError.notFound('Order not found');
   const updated = await orderService.cancelOwnOrder(String(order._id), req.user!.sub, req.body?.reason);
-  return ok(res, updated);
+  return ok(res, customerOrderView(updated));
 });
 
 /** Guest lookup - the reference exposed the same thing on its non-member tab. */
 export const guestLookup = asyncHandler(async (req: Request, res: Response) => {
   const order = await orderService.findGuestOrder(req.body.code, req.body.email);
-  return ok(res, order);
+  return ok(res, customerOrderView(order));
 });
 
 export const deliveryOptions = asyncHandler(async (_req: Request, res: Response) => {

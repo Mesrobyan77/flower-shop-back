@@ -1,4 +1,5 @@
 import type { NextFunction, Response } from 'express';
+import { User } from '../models/User';
 import { ApiError } from '../utils/ApiError';
 import { verifyAccessToken } from '../utils/jwt';
 import type { AuthedRequest } from '../types';
@@ -12,16 +13,34 @@ function extractToken(req: AuthedRequest): string | null {
   return null;
 }
 
+/**
+ * A verified signature is not permission. An account deactivated - or a role
+ * demoted - after a token was minted has to stop working on the next request
+ * instead of riding out the access token's lifetime, so the stored record is
+ * re-read and the request carries what the database says. One read by `_id`
+ * per authenticated request is the price of making that true.
+ */
+async function enforceStoredIdentity(req: AuthedRequest): Promise<void> {
+  const record = await User.findById(req.user!.sub).select('isActive role').lean();
+  if (!record) throw ApiError.unauthorized();
+  if (!record.isActive) throw ApiError.forbidden('This account has been deactivated');
+  req.user = { ...req.user!, role: record.role };
+}
+
 /** Hard gate: 401 when no valid access token is present. */
 export function requireAuth(req: AuthedRequest, _res: Response, next: NextFunction) {
   const token = extractToken(req);
   if (!token) return next(ApiError.unauthorized());
   try {
     req.user = verifyAccessToken(token);
-    return next();
   } catch (err) {
     return next(err);
   }
+  enforceStoredIdentity(req).then(
+    () => next(),
+    (err) => next(err),
+  );
+  return undefined;
 }
 
 /** Soft gate: attaches the user when a token is present, never rejects. */
@@ -32,8 +51,16 @@ export function optionalAuth(req: AuthedRequest, _res: Response, next: NextFunct
     req.user = verifyAccessToken(token);
   } catch {
     // ignore an expired token on public endpoints
+    return next();
   }
-  return next();
+  enforceStoredIdentity(req)
+    .then(() => next())
+    .catch(() => {
+      // A public page stays readable; it just stays anonymous.
+      req.user = undefined;
+      next();
+    });
+  return undefined;
 }
 
 /**
@@ -50,10 +77,14 @@ export function optionalAuthStrict(req: AuthedRequest, _res: Response, next: Nex
   if (!token) return next();
   try {
     req.user = verifyAccessToken(token);
-    return next();
   } catch (err) {
     return next(err);
   }
+  enforceStoredIdentity(req).then(
+    () => next(),
+    (err) => next(err),
+  );
+  return undefined;
 }
 
 export function requireRole(...roles: UserRole[]) {

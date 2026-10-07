@@ -2,18 +2,54 @@ import type { Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { Category, type CategoryDocument } from '../models/Category';
 import { Collection } from '../models/Collection';
-import { Product } from '../models/Product';
+import { Media } from '../models/Media';
+import { Order } from '../models/Order';
+import { Product, type ProductImage } from '../models/Product';
+import { Setting } from '../models/Setting';
 import { findProducts } from '../repositories/product.repository';
 import { ApiError } from '../utils/ApiError';
 import { asyncHandler } from '../utils/asyncHandler';
 import { created, noContent, ok, paginated } from '../utils/apiResponse';
 import { parsePaging } from '../utils/pagination';
 import { generateSku } from '../utils/codes';
+import { toMongoUpdate } from '../utils/mongoUpdate';
 import { uniqueSlug } from '../utils/slug';
 import { pickLocale } from '../models/common';
 import type { SortOption } from '../constants';
 
 /* ----------------------------- products ----------------------------- */
+
+type IncomingImage = { url: string; alt?: string; order?: number };
+
+/**
+ * The image editor works on URLs, but a stored image also carries the alt text the
+ * storefront renders and the Cloudinary identifiers the media library reconciles
+ * against. Those are restored here - by URL from the product's own images first,
+ * then from the Media documents - so saving a product for an unrelated reason can
+ * never strip metadata that the request never mentioned (F-61).
+ */
+async function restoreImageMeta(stored: ProductImage[], incoming: IncomingImage[]): Promise<ProductImage[]> {
+  const storedByUrl = new Map(stored.map((image) => [image.url, image]));
+  const unknown = incoming.map((image) => image.url).filter((url) => !storedByUrl.has(url));
+
+  const mediaByUrl = new Map<string, { key: string; alt?: string; id: Types.ObjectId }>();
+  if (unknown.length) {
+    const docs = await Media.find({ url: { $in: unknown } }).select('url key alt').lean();
+    for (const doc of docs) mediaByUrl.set(doc.url, { key: doc.key, alt: doc.alt, id: doc._id });
+  }
+
+  return incoming.map((image, index) => {
+    const known = storedByUrl.get(image.url);
+    const media = mediaByUrl.get(image.url);
+    return {
+      url: image.url,
+      order: image.order ?? index + 1,
+      alt: image.alt || known?.alt || media?.alt,
+      publicId: known?.publicId ?? media?.key,
+      mediaId: known?.mediaId ?? media?.id,
+    };
+  });
+}
 
 export const listProducts = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit } = parsePaging(req.query);
@@ -62,17 +98,24 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
   const product = await Product.findById(req.params.id);
   if (!product) throw ApiError.notFound('Product not found');
 
-  const patch: Record<string, unknown> = { ...req.body };
+  const body: Record<string, unknown> = { ...req.body };
 
-  if (req.body.category && String(req.body.category) !== String(product.category)) {
-    patch.categoryPath = await resolveCategoryPath(req.body.category);
+  if (body.category && String(body.category) !== String(product.category)) {
+    body.categoryPath = await resolveCategoryPath(String(body.category));
     await Category.updateOne({ _id: product.category }, { $inc: { productCount: -1 } });
-    await Category.updateOne({ _id: req.body.category }, { $inc: { productCount: 1 } });
+    await Category.updateOne({ _id: body.category }, { $inc: { productCount: 1 } });
   }
 
-  if (req.body.images && !req.body.thumbnail) patch.thumbnail = req.body.images[0]?.url;
+  if (Array.isArray(body.images)) {
+    body.images = await restoreImageMeta(product.images, body.images as IncomingImage[]);
+    if (!('thumbnail' in body)) body.thumbnail = (body.images as ProductImage[])[0]?.url ?? null;
+  }
 
-  const updated = await Product.findByIdAndUpdate(req.params.id, patch, { new: true, runValidators: true });
+  const updated = await Product.findByIdAndUpdate(req.params.id, toMongoUpdate(body), {
+    new: true,
+    runValidators: true,
+  });
+  if (!updated) throw ApiError.notFound('Product not found');
   return ok(res, updated);
 });
 
@@ -80,6 +123,16 @@ export const deleteProduct = asyncHandler(async (req: Request, res: Response) =>
   const product = await Product.findById(req.params.id);
   if (!product) throw ApiError.notFound('Product not found');
 
+  /**
+   * Historical orders resolve their lines through the product reference, so the
+   * document has to stay while any order still points at it - exactly the guard
+   * categories already enforce against their own relations (F-65).
+   */
+  if (await Order.exists({ 'items.product': product._id })) {
+    throw ApiError.badRequest('This product appears in existing orders - deactivate it instead of deleting it');
+  }
+
+  await Collection.updateMany({}, { $pull: { products: product._id } });
   await Category.updateOne({ _id: product.category }, { $inc: { productCount: -1 } });
   await product.deleteOne();
   return noContent(res);
@@ -169,7 +222,10 @@ export const updateCategory = asyncHandler(async (req: Request, res: Response) =
     }
   }
 
-  const updated = await Category.findByIdAndUpdate(req.params.id, patch, { new: true, runValidators: true });
+  const updated = await Category.findByIdAndUpdate(req.params.id, toMongoUpdate(patch, ['parent']), {
+    new: true,
+    runValidators: true,
+  });
   if (!updated) throw ApiError.notFound('Category not found');
   return ok(res, updated);
 });
@@ -189,7 +245,7 @@ export const deleteCategory = asyncHandler(async (req: Request, res: Response) =
 /* ---------------------------- collections --------------------------- */
 
 export const listCollections = asyncHandler(async (_req: Request, res: Response) => {
-  const items = await Collection.find().sort({ order: 1 }).lean();
+  const items = await Collection.find().sort({ order: 1, _id: 1 }).lean();
   return ok(res, items);
 });
 
@@ -200,13 +256,32 @@ export const createCollection = asyncHandler(async (req: Request, res: Response)
 });
 
 export const updateCollection = asyncHandler(async (req: Request, res: Response) => {
-  const collection = await Collection.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  const collection = await Collection.findByIdAndUpdate(req.params.id, toMongoUpdate(req.body), {
+    new: true,
+    runValidators: true,
+  });
   if (!collection) throw ApiError.notFound('Collection not found');
   return ok(res, collection);
 });
 
 export const deleteCollection = asyncHandler(async (req: Request, res: Response) => {
-  const collection = await Collection.findByIdAndDelete(req.params.id);
+  const collection = await Collection.findById(req.params.id);
   if (!collection) throw ApiError.notFound('Collection not found');
+
+  /**
+   * Storefront chrome links to collections by slug (hero slides, theme tiles, the
+   * promo bar), so deleting one would leave a live 404 the admin cannot see from
+   * this page. Same principle as the category and product guards (F-65).
+   */
+  const settings = await Setting.findOne({ key: 'storefront' }).lean();
+  const links = [
+    ...(settings?.heroSlides ?? []).map((slide) => slide.href ?? ''),
+    ...(settings?.themeTiles ?? []).map((tile) => tile.href ?? ''),
+    settings?.promoBar?.href ?? '',
+  ];
+  const linked = links.some((href) => href.includes(`/collections/${collection.slug}`));
+  if (linked) throw ApiError.badRequest('The home page still links to this collection - remove the link first');
+
+  await collection.deleteOne();
   return noContent(res);
 });

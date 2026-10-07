@@ -53,6 +53,15 @@ function normalize(err: unknown): ApiError {
     return ApiError.badRequest(`Upload rejected: ${err.message}`);
   }
 
+  /**
+   * A multipart body the parser cannot read is the caller's broken request.
+   * Busboy reports it as a bare Error from inside multer, where it used to land
+   * in the 500 branch and answer with a stack trace.
+   */
+  if (err instanceof Error && /malformed part header|multipart parse|no boundary|unexpected boundary/i.test(err.message)) {
+    return ApiError.badRequest('The upload could not be parsed');
+  }
+
   return ApiError.internal(err instanceof Error ? err.message : 'Internal server error');
 }
 

@@ -349,9 +349,9 @@ export const seedSettings = {
     },
   },
   social: {
-    instagram: 'https://instagram.com/',
-    facebook: 'https://facebook.com/',
-    youtube: 'https://youtube.com/',
-    telegram: 'https://t.me/',
+    instagram: '',
+    facebook: '',
+    youtube: '',
+    telegram: '',
   },
 };

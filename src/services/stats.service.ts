@@ -4,12 +4,13 @@ import { User } from '../models/User';
 import { Review } from '../models/Review';
 import { Inquiry } from '../models/Inquiry';
 import { ORDER_STATUSES, type OrderStatus } from '../constants';
+import { SHOP_TIME_ZONE, startOfShopMonth } from '../utils/dateKey';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export async function dashboardStats() {
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStart = startOfShopMonth(now);
   const weekAgo = new Date(now.getTime() - 7 * DAY_MS);
 
   const [users, products, activeProducts, orders, openInquiries, pendingReviews] = await Promise.all([
@@ -39,10 +40,11 @@ export async function dashboardStats() {
   ]);
 
   const daily = await Order.aggregate([
-    { $match: { createdAt: { $gte: weekAgo } } },
+    // Same population as the revenue tiles above: cancelled orders are not money the shop collects.
+    { $match: { createdAt: { $gte: weekAgo }, status: { $nin: ['cancelled'] } } },
     {
       $group: {
-        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: SHOP_TIME_ZONE } },
         orders: { $sum: 1 },
         revenue: { $sum: '$total' },
       },

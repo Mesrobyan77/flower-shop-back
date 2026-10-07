@@ -190,6 +190,18 @@ const schema = z.object({
   API_PREFIX: z.string().default('/api'),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
 
+  /**
+   * How many reverse-proxy hops sit in front of the API. `X-Forwarded-For` is only
+   * consulted for that many hops from the right, so an attacker cannot claim a
+   * client address the socket never used - the rate limiters key on `req.ip` and a
+   * trusted header they did not earn is no limit at all.
+   *
+   * 0 (the default) means "the socket address is the client": correct when the API
+   * is exposed directly. A deployment behind a TLS proxy that *appends* the peer
+   * address (nginx `proxy_add_x_forwarded_for`) sets this to 1.
+   */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(4).default(0),
+
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
   MONGODB_DB: z.string().default('anahit_flower'),
 

@@ -6,7 +6,7 @@ import catalogRoutes from './catalog.routes';
 import commerceRoutes from './commerce.routes';
 import contentRoutes from './content.routes';
 import paymentRoutes from './payments.routes';
-import { MEMBER_GRADES, REGIONS, TIME_SLOTS } from '../constants';
+import { MEMBER_GRADES, REGIONS, SIGNUP_BONUS_POINTS, TIME_SLOTS } from '../constants';
 import { env } from '../config/env';
 import { ok } from '../utils/apiResponse';
 
@@ -26,6 +26,7 @@ router.get('/config', (_req, res) =>
     },
     regions: REGIONS,
     grades: MEMBER_GRADES,
+    signupBonusPoints: SIGNUP_BONUS_POINTS,
     timeSlots: TIME_SLOTS,
   }),
 );
