@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { env } from '../config/env';
+import { cookiePolicy, REFRESH_COOKIE } from '../config/cookiePolicy';
 import { User } from '../models/User';
 import * as authService from '../services/auth.service';
 import { ApiError } from '../utils/ApiError';
@@ -8,18 +8,13 @@ import { tokenTtlMs } from '../utils/jwt';
 import { created, noContent, ok } from '../utils/apiResponse';
 import type { AuthedRequest } from '../types';
 
-const REFRESH_COOKIE = 'xf_refresh';
-
 function refreshCookieToken(req: Request): string | undefined {
   return req.body?.refreshToken || (req as Request & { cookies?: Record<string, string> }).cookies?.[REFRESH_COOKIE];
 }
 
 function setRefreshCookie(res: Response, token: string) {
   res.cookie(REFRESH_COOKIE, token, {
-    httpOnly: true,
-    secure: env.isProd,
-    sameSite: 'lax',
-    path: '/',
+    ...cookiePolicy(),
     // Follow the token's own expiry (JWT_REFRESH_EXPIRES_IN) instead of a
     // fixed number of days, so the browser never keeps a cookie the server
     // will already refuse - or drops one it would still accept.
@@ -54,7 +49,7 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
   // Revoke the session behind the presented token first - clearing the cookie
   // alone would leave the same token able to mint fresh access tokens.
   await authService.logout(refreshCookieToken(req));
-  res.clearCookie(REFRESH_COOKIE, { path: '/' });
+  res.clearCookie(REFRESH_COOKIE, cookiePolicy());
   return ok(res, { loggedOut: true });
 });
 

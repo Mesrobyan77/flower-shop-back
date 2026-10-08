@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import { z } from 'zod';
+import type { CookieSameSite } from './cookiePolicy';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -103,6 +104,42 @@ function paymentProviderIssues(
       message: 'must be the public storefront origin in production while online payments are enabled',
     });
   }
+}
+
+/**
+ * Cookie transport rules that contradict each other, stated as plain data so the
+ * refinement below and the regression suite can read the same list.
+ *
+ * Two contradictions matter, and both produce a session that silently does not
+ * exist rather than an obvious error:
+ *
+ * - `COOKIE_SAMESITE=none` with `COOKIE_SECURE=false`: browsers refuse to store a
+ *   `None` cookie that is not `Secure`, so login would answer 200, set nothing,
+ *   and every refresh would 401.
+ * - `COOKIE_SECURE=false` in production: the session cookie goes over plain HTTP
+ *   where anyone on the path can read it. A development machine can still ask for
+ *   it - that is how a local `http://` storefront gets a cookie at all.
+ *
+ * Reported by variable name only; values are never echoed.
+ */
+export function cookiePolicyConflicts(cfg: {
+  NODE_ENV: string;
+  COOKIE_SAMESITE: CookieSameSite;
+  COOKIE_SECURE: 'auto' | 'true' | 'false';
+}): { path: 'COOKIE_SECURE'; message: string }[] {
+  const issues: { path: 'COOKIE_SECURE'; message: string }[] = [];
+
+  if (cfg.COOKIE_SAMESITE === 'none' && cfg.COOKIE_SECURE === 'false') {
+    issues.push({
+      path: 'COOKIE_SECURE',
+      message: 'cannot be false while COOKIE_SAMESITE=none - SameSite=None is only stored with Secure',
+    });
+  }
+  if (cfg.NODE_ENV === 'production' && cfg.COOKIE_SECURE === 'false') {
+    issues.push({ path: 'COOKIE_SECURE', message: 'must not be false in production - the session cookie would travel over plain HTTP' });
+  }
+
+  return issues;
 }
 
 function productionIssues(
@@ -211,6 +248,16 @@ const schema = z.object({
   JWT_REFRESH_EXPIRES_IN: ttl('30d'),
   COOKIE_DOMAIN: z.string().default('localhost'),
 
+  /**
+   * How the session and guest cookies are allowed to travel. `lax` (the default)
+   * keeps them on the site that set them; `none` exists for a storefront served
+   * from a different registrable domain than this API, and always pairs with
+   * `Secure`. See `config/cookiePolicy.ts`.
+   */
+  COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).default('lax'),
+  /** `auto` (the default) means `Secure` in production and nowhere else. */
+  COOKIE_SECURE: z.enum(['auto', 'true', 'false']).default('auto'),
+
   // Media lives in Cloudinary. Left empty the API still boots on the seeded
   // local artwork; only admin uploads need real credentials.
   CLOUDINARY_CLOUD_NAME: z.string().default(''),
@@ -269,6 +316,9 @@ const schema = z.object({
 }).superRefine((cfg, ctx) => {
   productionIssues(cfg, ctx);
   paymentProviderIssues(cfg, ctx);
+  for (const issue of cookiePolicyConflicts(cfg)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [issue.path], message: issue.message });
+  }
 });
 
 const parsed = schema.safeParse(process.env);

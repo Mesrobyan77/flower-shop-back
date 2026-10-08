@@ -12,7 +12,9 @@
  *   4. mass assignment           PATCH /auth/me cannot touch role, points, spend, password
  *   5. upload surface            declared type must match the bytes, size/count limits
  *                                are 4xx, traversal characters never survive into a key
- *   6. cookies and headers       HttpOnly/SameSite always, Secure in production,
+ *   6. cookies and headers       HttpOnly always, SameSite as configured (None is
+ *                                never emitted without Secure, and no cookie is
+ *                                widened to a Domain), Secure in production,
  *                                no CORS echo for a foreign origin, generic 5xx
  *   7. rate limits               active in production, off only in NODE_ENV=test
  *
@@ -436,14 +438,33 @@ async function transportProbes() {
 
   const refreshFlags = cookieFlags(login.setCookie, 'xf_refresh');
   const guestFlags = cookieFlags(login.setCookie, 'xf_sid');
+  /**
+   * SameSite is configuration, not a constant: a storefront on a different
+   * registrable domain than the API has to run `None` (forced `Secure`) or the
+   * browser never attaches the session cookie to the cross-site refresh. The
+   * harness therefore asserts that what the API emits is what it was configured
+   * to emit, plus the rules that no configuration may break.
+   */
+  const expectedSameSite = (process.env.COOKIE_SAMESITE ?? 'lax').toLowerCase();
+  const secureExpected = expectedSameSite === 'none' || PROD || (process.env.COOKIE_SECURE ?? 'auto') === 'true';
   check('the refresh cookie is HttpOnly', /HttpOnly/i.test(refreshFlags), refreshFlags.replace(/=\S+/g, '=<redacted>'));
-  check('the refresh cookie is SameSite=Lax', /SameSite=Lax/i.test(refreshFlags), refreshFlags);
+  check(`the refresh cookie is SameSite=${expectedSameSite}`, new RegExp(`SameSite=${expectedSameSite}`, 'i').test(refreshFlags), refreshFlags);
   check('the guest session cookie is HttpOnly', /HttpOnly/i.test(guestFlags), guestFlags.replace(/=\S+/g, '=<redacted>'));
-  check('the guest session cookie is SameSite=Lax', /SameSite=Lax/i.test(guestFlags), guestFlags);
+  check(`the guest session cookie is SameSite=${expectedSameSite}`, new RegExp(`SameSite=${expectedSameSite}`, 'i').test(guestFlags), guestFlags);
+  check('no cookie carries a Domain attribute (host-only)', !/(^|;)\s*Domain=/i.test(refreshFlags) && !/(^|;)\s*Domain=/i.test(guestFlags), {
+    refresh: refreshFlags,
+    guest: guestFlags,
+  });
   check(
-    PROD ? 'cookies are Secure in production' : 'cookies are not Secure outside production (plain-HTTP dev keeps working)',
-    PROD ? /Secure/i.test(refreshFlags) && /Secure/i.test(guestFlags) : !/Secure/i.test(refreshFlags) && !/Secure/i.test(guestFlags),
-    { prod: PROD, refresh: refreshFlags, guest: guestFlags },
+    secureExpected
+      ? PROD || expectedSameSite === 'none'
+        ? 'cookies are Secure where the policy or SameSite=None requires it'
+        : 'cookies are Secure because COOKIE_SECURE=true asks for it'
+      : 'cookies are not Secure outside production (plain-HTTP dev keeps working)',
+    secureExpected
+      ? /Secure/i.test(refreshFlags) && /Secure/i.test(guestFlags)
+      : !/Secure/i.test(refreshFlags) && !/Secure/i.test(guestFlags),
+    { prod: PROD, samesite: expectedSameSite, refresh: refreshFlags, guest: guestFlags },
   );
 
   const health = await call('/health');

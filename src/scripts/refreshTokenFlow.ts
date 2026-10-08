@@ -7,6 +7,11 @@
  * TTLs come from configuration, expired and pre-E1 tokens are rejected, and
  * of ten concurrent refreshes carrying one cookie exactly one succeeds.
  *
+ * Also asserts the cookie transport on the wire (SameSite/Secure/Path/Domain as
+ * configured): the cross-site case behind a "login works, refresh 401s" production
+ * symptom, where the token was valid all along and only the browser's cookie rules
+ * kept it from arriving.
+ *
  * The suite refuses to run unless SMOKE_API names the API under test and
  * MONGODB_URI points at a LOCAL database, then verifies the API and the suite
  * really share that database - a mis-targeted run must fail loudly instead of
@@ -21,13 +26,13 @@ import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import mongoose, { Types } from 'mongoose';
 import { env } from '../config/env';
+import { REFRESH_COOKIE, resolveCookiePolicy } from '../config/cookiePolicy';
 import { GUEST_COOKIE } from '../middlewares/guestSession';
 import { Product } from '../models/Product';
 import { RefreshSession } from '../models/RefreshSession';
 import { User } from '../models/User';
 
 const BASE = process.env.SMOKE_API ?? '';
-const REFRESH_COOKIE = 'xf_refresh';
 
 let passed = 0;
 let failed = 0;
@@ -99,6 +104,18 @@ function refreshCookieOf(result: HttpResult): string | undefined {
 
 function setCookieHeader(result: HttpResult, name = REFRESH_COOKIE): string | undefined {
   return result.setCookies.find((line) => line.startsWith(`${name}=`));
+}
+
+/**
+ * One attribute of a Set-Cookie line: the value for `SameSite`/`Max-Age`, or the
+ * string 'flag' for a valueless attribute like `HttpOnly`. Never returns the
+ * cookie's own value - attributes are what this suite asserts on.
+ */
+function cookieAttr(line: string | undefined, name: string): string | undefined {
+  if (!line) return undefined;
+  const match = new RegExp(`(?:^|;)\\s*${name}(?:=([^;]*))?(?:;|$)`, 'i').exec(line);
+  if (!match) return undefined;
+  return match[1] === undefined ? 'flag' : match[1].trim();
 }
 
 /** `15m` / `30d` / `1h30m` -> milliseconds (test-side mirror of `ms`). */
@@ -365,12 +382,53 @@ async function run() {
   });
   const hygieneLine = setCookieHeader(loginHygiene) ?? '';
   check('the refresh cookie is HttpOnly', /HttpOnly/i.test(hygieneLine));
-  check('the refresh cookie is SameSite=Lax', /SameSite=Lax/i.test(hygieneLine));
   check('the refresh cookie is scoped to Path=/', /Path=\//.test(hygieneLine));
   check('login never returns the refresh token in the body', loginHygiene.body?.data?.refreshToken === undefined);
   const rotatedHygiene = await call('/auth/refresh', { method: 'POST', cookie: refreshCookieOf(loginHygiene)! });
   check('refresh never returns the refresh token in the body', rotatedHygiene.body?.data?.refreshToken === undefined);
   check('refresh rotates the cookie on every call', Boolean(refreshCookieOf(rotatedHygiene)));
+
+  section('Cookie transport - the attributes a browser decides on');
+  /**
+   * Transport policy, asserted on the real Set-Cookie lines.
+   *
+   * This is the part that broke a Netlify storefront against a Render API: the
+   * cookie was created, valid and stored, but `SameSite=Lax` kept the browser from
+   * ever attaching it to the cross-site refresh request, so `/auth/refresh` answered
+   * 401 "No refresh token supplied" while `/auth/login` and `/auth/me` were fine.
+   * `npm run cookie:policy-tests` covers the rules themselves; this proves the API
+   * emits them on the wire. Both read the same .env as the API under test, so a
+   * mismatch here means the API was started with a different configuration.
+   */
+  const expected = resolveCookiePolicy({
+    samesite: env.COOKIE_SAMESITE,
+    secure: env.COOKIE_SECURE,
+    isProd: env.isProd,
+  });
+  const sameSite = cookieAttr(hygieneLine, 'SameSite') ?? '';
+  check(
+    `the refresh cookie carries the configured SameSite (${expected.sameSite})`,
+    sameSite.toLowerCase() === expected.sameSite.toLowerCase(),
+    { observed: sameSite || '(none)', expected: expected.sameSite },
+  );
+  check(
+    `Secure follows the policy (expected ${expected.secure ? 'on' : 'off'})`,
+    (cookieAttr(hygieneLine, 'Secure') === 'flag') === expected.secure,
+    { secure: cookieAttr(hygieneLine, 'Secure') ?? '(absent)' },
+  );
+  check('no cookie is widened to a Domain attribute', cookieAttr(hygieneLine, 'Domain') === undefined, {
+    domain: cookieAttr(hygieneLine, 'Domain') ?? '(absent)',
+  });
+  check('SameSite=None is never sent without Secure', !(sameSite.toLowerCase() === 'none' && cookieAttr(hygieneLine, 'Secure') !== 'flag'));
+
+  const noCredential = await call('/auth/refresh', { method: 'POST', body: {} });
+  const noCredentialMessage = noCredential.body?.message ?? noCredential.body?.error?.message ?? '';
+  check(
+    'a refresh with no cookie and no body is refused, not served',
+    noCredential.status === 401 && /no refresh token supplied/i.test(noCredentialMessage),
+    { status: noCredential.status, message: noCredentialMessage },
+  );
+  check('that refusal sets no cookie', setCookieHeader(noCredential) === undefined);
 
   section('Guest session and cart merge on login');
   const product = await Product.create({
@@ -395,7 +453,14 @@ async function run() {
     minted: Boolean(sid),
   });
   const sidLine = setCookieHeader(guestAdd, GUEST_COOKIE) ?? '';
-  check('the guest cookie is HttpOnly and SameSite=Lax', /HttpOnly/i.test(sidLine) && /SameSite=Lax/i.test(sidLine));
+  check('the guest cookie is HttpOnly', /HttpOnly/i.test(sidLine));
+  check(
+    'the guest cookie carries the same transport policy as the session cookie',
+    (cookieAttr(sidLine, 'SameSite') ?? '').toLowerCase() === expected.sameSite &&
+      (cookieAttr(sidLine, 'Secure') === 'flag') === expected.secure &&
+      cookieAttr(sidLine, 'Domain') === undefined,
+    { sameSite: cookieAttr(sidLine, 'SameSite') ?? '(absent)', secure: cookieAttr(sidLine, 'Secure') ?? '(absent)' },
+  );
   check('a guest request never touches the refresh cookie', setCookieHeader(guestAdd, REFRESH_COOKIE) === undefined);
   const guestView = await call('/cart', { cookies: { [GUEST_COOKIE]: sid! } });
   check('the guest cart persists across requests', guestView.status === 200 && guestView.body?.data?.itemCount === 1, {

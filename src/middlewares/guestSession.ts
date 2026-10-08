@@ -1,8 +1,9 @@
 import type { NextFunction, Request, Response } from 'express';
-import { env } from '../config/env';
+import { cookiePolicy, GUEST_COOKIE } from '../config/cookiePolicy';
 import { randomToken } from '../utils/codes';
 
-export const GUEST_COOKIE = 'xf_sid';
+/** Re-exported for the call sites that already import the name from here. */
+export { GUEST_COOKIE };
 
 /**
  * Guest basket keys are opaque identifiers that end up in a unique index, in log
@@ -25,11 +26,8 @@ export function guestSession(req: Request, res: Response, next: NextFunction) {
   if (!sid) {
     sid = randomToken(16);
     res.cookie(GUEST_COOKIE, sid, {
-      httpOnly: true,
-      secure: env.isProd,
-      sameSite: 'lax',
+      ...cookiePolicy(),
       maxAge: 1000 * 60 * 60 * 24 * 30,
-      path: '/',
     });
   }
 
