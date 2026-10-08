@@ -7,6 +7,7 @@ import { Order } from '../models/Order';
 import { Product, type ProductImage } from '../models/Product';
 import { Setting } from '../models/Setting';
 import { findProducts } from '../repositories/product.repository';
+import { revalidateStorefront } from '../services/storefrontCache';
 import { ApiError } from '../utils/ApiError';
 import { asyncHandler } from '../utils/asyncHandler';
 import { created, noContent, ok, paginated } from '../utils/apiResponse';
@@ -91,6 +92,7 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
   });
 
   await Category.updateOne({ _id: body.category }, { $inc: { productCount: 1 } });
+  revalidateStorefront(product.slug);
   return created(res, product);
 });
 
@@ -116,6 +118,7 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
     runValidators: true,
   });
   if (!updated) throw ApiError.notFound('Product not found');
+  revalidateStorefront(updated.slug);
   return ok(res, updated);
 });
 
@@ -135,6 +138,7 @@ export const deleteProduct = asyncHandler(async (req: Request, res: Response) =>
   await Collection.updateMany({}, { $pull: { products: product._id } });
   await Category.updateOne({ _id: product.category }, { $inc: { productCount: -1 } });
   await product.deleteOne();
+  revalidateStorefront(product.slug);
   return noContent(res);
 });
 

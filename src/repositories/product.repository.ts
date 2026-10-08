@@ -10,6 +10,7 @@ export interface ProductQuery {
   categoryIds?: string[];
   collectionProductIds?: string[];
   search?: string;
+  slug?: string;
   minPrice?: number;
   maxPrice?: number;
   badges?: ProductBadge[];
@@ -34,6 +35,7 @@ export function buildProductFilter(q: ProductQuery): FilterQuery<ProductDocument
   const filter: FilterQuery<ProductDocument> = {};
 
   if (!q.includeInactive) filter.isActive = true;
+  if (q.slug) filter.slug = q.slug;
   if (q.ids?.length) filter._id = { $in: q.ids };
   if (q.categoryIds?.length) filter.categoryPath = { $in: q.categoryIds };
   if (q.collectionProductIds?.length) {

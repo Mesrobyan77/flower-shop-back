@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { DELIVERY_METHODS, LOCALES, PRODUCT_BADGES, SORT_OPTIONS } from '../constants';
-import { imageUrl, localizedInput, localizedOptionalInput, objectId } from './common.validator';
+import { imageUrl, localizedInput, localizedOptionalInput, objectId, slugParam } from './common.validator';
 
 export const productListQuery = z.object({
   page: z.coerce.number().int().min(1).optional(),
@@ -8,6 +8,8 @@ export const productListQuery = z.object({
   category: z.string().optional(),
   collection: z.string().optional(),
   q: z.string().max(120).optional(),
+  /** Exact-slug lookup, same constraint the :slug route uses. */
+  slug: slugParam.shape.slug.optional(),
   min: z.coerce.number().min(0).optional(),
   max: z.coerce.number().min(0).optional(),
   badge: z.enum(PRODUCT_BADGES).optional(),

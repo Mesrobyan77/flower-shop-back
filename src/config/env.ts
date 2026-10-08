@@ -244,6 +244,12 @@ const schema = z.object({
   // so it must be the address the shopper's browser can actually reach.
   APP_FRONTEND_URL: z.string().url().default('http://localhost:3000'),
 
+  // Shared secret for the storefront's on-demand cache invalidation route
+  // (POST <APP_FRONTEND_URL>/api/revalidate). Empty means the API never notifies
+  // the storefront and its ISR TTLs alone decide how long a change stays visible;
+  // an unset secret can therefore never become an open cache purge.
+  FRONTEND_REVALIDATE_SECRET: z.string().default(''),
+
   // Idram merchant interface: EDP_REC_ACCOUNT (merchant ID), the SECRET_KEY
   // Idram issues for checksum verification, and the hosted payment page.
   // SUCCESS_URL / FAIL_URL / RESULT_URL are registered on Idram's side.

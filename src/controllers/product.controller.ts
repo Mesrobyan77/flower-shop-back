@@ -38,6 +38,11 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
     categoryIds,
     collectionProductIds,
     search: q.q,
+    // Lets the storefront ask "is this slug still public?" through a list read,
+    // which answers 200 with an empty page instead of a 404 - see
+    // flower-shop-front/src/lib/api/productLiveness.ts for why that distinction
+    // is what keeps an unpublished product from staying painted forever.
+    slug: q.slug,
     minPrice: q.min !== undefined ? Number(q.min) : undefined,
     maxPrice: q.max !== undefined ? Number(q.max) : undefined,
     badges: q.badge ? [q.badge as never] : undefined,
