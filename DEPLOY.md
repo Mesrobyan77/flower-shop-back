@@ -94,7 +94,11 @@ the browser sees one site and `SameSite=Lax` is enough. On Netlify that is a pro
 rewrite (`/api/*` to the Render URL) plus a storefront build with
 `NEXT_PUBLIC_API_URL=/api`; the API's SSR-side base URL has to stay absolute, so this
 shape needs the storefront's client and server bases split before it can be switched
-on. `CORS_ORIGINS` then no longer matters for the browser, and the cookies are
+on. One more collision to plan around: the storefront has its own route handler at
+`/api/revalidate`, which this API calls to purge the catalog cache, so a blanket
+`/api/*` rewrite would capture that call too - the proxy needs a narrower prefix, or
+that path has to stay with Next. `CORS_ORIGINS` then no longer matters for the browser,
+and the cookies are
 first-party - which is what keeps them working in browsers that block third-party
 cookies.
 
@@ -119,6 +123,27 @@ already-valid token is allowed to travel. `npm run cookie:policy-tests` pins the
 | `COOKIE_SECURE` | `auto` | Leave alone; `None` forces `Secure` regardless |
 | `CORS_ORIGINS` | the storefront origin, exact | A refused origin answers 403 and is never echoed back |
 | `TRUST_PROXY_HOPS` | `1` | Both hosts terminate TLS in front of the app; with `0` the rate limiter keys every visitor on one proxy address |
+
+Checking a deployment without a browser: ask the live API for a cookie and read only
+the attributes (never a value), then ask for a cross-site preflight from the real
+storefront origin.
+
+```bash
+curl -s -D - -o /dev/null -X POST https://<api-host>/api/auth/login \
+  -H 'Content-Type: application/json' -d '{"email":"nobody@example.test","password":"wrong"}' \
+  | tr -d '\r' | grep -i '^set-cookie' | sed -E 's/=[^;]*/=<redacted>/g'
+
+curl -s -o /dev/null -D - -X OPTIONS https://<api-host>/api/auth/refresh \
+  -H "Origin: https://<storefront-host>" -H 'Access-Control-Request-Method: POST' \
+  | tr -d '\r' | grep -iE '^(access-control|HTTP)'
+```
+
+The first line must show `SameSite=None; Secure` for shape B (`Lax` with no `Secure`
+is the broken shape, whatever the code version is), and the second must echo the
+storefront origin exactly with `Access-Control-Allow-Credentials: true`. Then confirm
+in the browser: network tab, `POST /api/auth/refresh` → `200`, and the request headers
+carry a `Cookie:` line. `npm run refresh:tests` (this repository) and `npm run
+test:auth` (the storefront) cover the same contract automatically.
 
 ## 4. Secret injection
 

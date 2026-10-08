@@ -8,9 +8,11 @@
  * of ten concurrent refreshes carrying one cookie exactly one succeeds.
  *
  * Also asserts the cookie transport on the wire (SameSite/Secure/Path/Domain as
- * configured): the cross-site case behind a "login works, refresh 401s" production
- * symptom, where the token was valid all along and only the browser's cookie rules
- * kept it from arriving.
+ * configured, and the removal that logout sends for the same cookie): the
+ * cross-site case behind a "login works, refresh 401s" production symptom, where the
+ * token was valid all along and only the browser's cookie rules kept it from arriving.
+ * The CORS pair that lets a cookie travel at all is probed from the API's own
+ * allowlisted origin and from one that is not on the list.
  *
  * The suite refuses to run unless SMOKE_API names the API under test and
  * MONGODB_URI points at a LOCAL database, then verifies the API and the suite
@@ -56,6 +58,7 @@ interface HttpResult {
   status: number;
   body: any;
   setCookies: string[];
+  headers: Record<string, string>;
 }
 
 interface CallOptions {
@@ -64,11 +67,14 @@ interface CallOptions {
   token?: string;
   cookie?: string;
   cookies?: Record<string, string>;
+  /** Sends an `Origin` header, which is what turns a probe into a CORS request. */
+  origin?: string;
 }
 
 async function call(path: string, options: CallOptions = {}): Promise<HttpResult> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
+  if (options.origin) headers.Origin = options.origin;
   const cookieParts: string[] = [];
   if (options.cookie) cookieParts.push(`${REFRESH_COOKIE}=${options.cookie}`);
   for (const [name, value] of Object.entries(options.cookies ?? {})) cookieParts.push(`${name}=${value}`);
@@ -82,7 +88,24 @@ async function call(path: string, options: CallOptions = {}): Promise<HttpResult
 
   const setCookies = response.headers.getSetCookie?.() ?? [];
   const text = await response.text();
-  return { status: response.status, body: text ? JSON.parse(text) : null, setCookies };
+  const headers_: Record<string, string> = {};
+  response.headers.forEach((value, key) => {
+    headers_[key] = value;
+  });
+  return { status: response.status, body: text ? JSON.parse(text) : null, setCookies, headers: headers_ };
+}
+
+/** A browser's preflight: OPTIONS with the origin and the method it wants to use. */
+async function preflight(path: string, origin: string, method = 'POST'): Promise<HttpResult> {
+  const response = await fetch(`${BASE}${path}`, {
+    method: 'OPTIONS',
+    headers: { Origin: origin, 'Access-Control-Request-Method': method, 'Access-Control-Request-Headers': 'content-type' },
+  });
+  const headers: Record<string, string> = {};
+  response.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+  return { status: response.status, body: null, setCookies: response.headers.getSetCookie?.() ?? [], headers };
 }
 
 /** The value of a freshly set cookie, if `name` is among the Set-Cookie lines. */
@@ -310,6 +333,42 @@ async function run() {
   check('logout answers 200 with loggedOut: true', loggedOut.status === 200 && loggedOut.body?.data?.loggedOut === true, {
     status: loggedOut.status,
   });
+
+  /**
+   * Deletion has to match the policy that set the cookie.
+   *
+   * A browser removes a cookie by name, domain and path, and it only honors the
+   * `SameSite`/`Secure` pair it stored the cookie under. A clear that drifts from
+   * the setting policy leaves the old refresh token alive in the jar after logout,
+   * so the attributes below are compared against the same policy the login response
+   * was built from - here, the lines captured live on this very run.
+   */
+  const setLine = setCookieHeader(relogin);
+  const clearLine = setCookieHeader(loggedOut, REFRESH_COOKIE) ?? '';
+  const clearingMatches = Boolean(setLine) && Boolean(clearLine);
+  for (const attr of ['SameSite', 'Secure', 'HttpOnly', 'Path'] as const) {
+    check(
+      `logout's cookie removal carries the same ${attr} as the cookie it sets`,
+      clearingMatches && cookieAttr(clearLine, attr) === cookieAttr(setLine ?? '', attr),
+      { set: cookieAttr(setLine ?? '', attr) ?? '(absent)', cleared: cookieAttr(clearLine, attr) ?? '(absent)' },
+    );
+  }
+  const clearedValue = clearLine.split(';')[0]?.split('=')[1] ?? 'x';
+  const expiresImmediately =
+    cookieAttr(clearLine, 'Max-Age') === '0' ||
+    (() => {
+      const raw = cookieAttr(clearLine, 'Expires');
+      const at = raw ? Date.parse(raw) : Number.NaN;
+      return Number.isFinite(at) && at <= Date.now() + 60_000;
+    })();
+  check('logout empties the cookie value', clearLine.startsWith(`${REFRESH_COOKIE}=`) && clearedValue === '', {
+    empty: clearedValue === '',
+  });
+  check('logout expires the cookie immediately', expiresImmediately, {
+    maxAge: cookieAttr(clearLine, 'Max-Age') ?? '(absent)',
+    expires: cookieAttr(clearLine, 'Expires') ?? '(absent)',
+  });
+
   const afterLogout = await call('/auth/refresh', { method: 'POST', cookie: logoutA.cookie });
   check('refresh after logout is rejected', afterLogout.status === 401, { status: afterLogout.status });
   const familyId = (jwt.decode(logoutA.cookie) as { fid: string }).fid;
@@ -429,6 +488,60 @@ async function run() {
     { status: noCredential.status, message: noCredentialMessage },
   );
   check('that refusal sets no cookie', setCookieHeader(noCredential) === undefined);
+
+  section('CORS credentials - the other half of a cross-site session');
+  /**
+   * A refresh cookie only arrives if the browser is also allowed to send it.
+   *
+   * `Access-Control-Allow-Credentials: true` is what lets a cross-site fetch carry
+   * cookies at all, and it is refused outright when the allow-origin is the wildcard.
+   * Both halves are asserted on responses this API actually produced, for the exact
+   * origin in its own allowlist plus one origin that is not in it.
+   */
+  const allowedOrigin = env.corsOrigins[0];
+  if (!allowedOrigin) {
+    console.log('  SKIP  CORS_ORIGINS is empty; nothing to probe - set it to the storefront origin');
+  } else {
+    const options = await preflight('/auth/refresh', allowedOrigin);
+    check(
+      `a preflight from the allowlisted origin is accepted (HTTP ${options.status})`,
+      options.status >= 200 && options.status < 300,
+      { status: options.status },
+    );
+    check(
+      'the preflight echoes that origin back exactly, never a wildcard',
+      options.headers['access-control-allow-origin'] === allowedOrigin,
+      { acao: options.headers['access-control-allow-origin'] ?? '(absent)' },
+    );
+    check(
+      'the preflight grants credentials',
+      options.headers['access-control-allow-credentials'] === 'true',
+      { acac: options.headers['access-control-allow-credentials'] ?? '(absent)' },
+    );
+    const corsPost = await call('/auth/refresh', { method: 'POST', body: {}, origin: allowedOrigin });
+    check(
+      'the actual request answers with the same origin + credentials pair',
+      corsPost.headers['access-control-allow-origin'] === allowedOrigin &&
+        corsPost.headers['access-control-allow-credentials'] === 'true',
+      {
+        status: corsPost.status,
+        acao: corsPost.headers['access-control-allow-origin'] ?? '(absent)',
+        acac: corsPost.headers['access-control-allow-credentials'] ?? '(absent)',
+      },
+    );
+    check('a credentialed response never uses a wildcard origin', corsPost.headers['access-control-allow-origin'] !== '*');
+
+    const hostile = await call('/auth/refresh', { method: 'POST', body: {}, origin: 'https://evil.example' });
+    check('an origin outside the allowlist is refused', hostile.status === 403, { status: hostile.status });
+    check(
+      'a refused origin is never echoed back as allowed',
+      hostile.headers['access-control-allow-origin'] === undefined,
+      { acao: hostile.headers['access-control-allow-origin'] ?? '(absent)' },
+    );
+    check('a refused origin sets no cookie either', hostile.setCookies.length === 0, {
+      cookies: hostile.setCookies.length,
+    });
+  }
 
   section('Guest session and cart merge on login');
   const product = await Product.create({

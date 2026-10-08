@@ -13,14 +13,17 @@
  * the policy is configuration-driven, `SameSite=None` can never be issued without
  * `Secure`, `httpOnly`/`Path=/` are not configurable at all, no cookie ever gets a
  * `Domain` attribute (host-only, which is also what makes a proxied deployment
- * work), and the contradictory pairs are refused at boot.
+ * work), and the contradictory pairs are refused at boot - proved twice, once as a
+ * pure rule and once by a child process that really refuses to start, which is what
+ * a deployment does with the same variables.
  *
  * Nothing here weakens token validation: this file is about how an already-valid
  * token is allowed to travel.
  *
  *   npm run cookie:policy-tests
  */
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { cookiePolicy, GUEST_COOKIE, REFRESH_COOKIE, resolveCookiePolicy } from '../config/cookiePolicy';
 import { cookiePolicyConflicts, env } from '../config/env';
@@ -152,6 +155,66 @@ function runShippedDefaults() {
   check('.env.example documents none as the cross-site value', /none/.test(example));
 }
 
+const tsx = path.resolve(process.cwd(), 'node_modules/tsx/dist/cli.mjs');
+const probe = path.resolve(process.cwd(), 'src/scripts/envBootProbe.ts');
+
+/** Boots `config/env` in a separate process with these variables and reports the outcome. */
+function boot(overrides: Record<string, string>): { status: number | null; output: string } {
+  const result = spawnSync(process.execPath, [tsx, probe], {
+    cwd: process.cwd(),
+    env: { ...process.env, ...overrides },
+    encoding: 'utf8',
+  });
+  return { status: result.status, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
+}
+
+/**
+ * A refusal is a deployment's first line of defence, so it has to be the process's
+ * own behaviour - not just a function some caller remembers to run. Everything the
+ * child prints is also checked for leaks: an issue line names a variable and its
+ * rule, never the value that is in it.
+ */
+function runProcessBoot() {
+  section('Boot refusals in a real process (what a deployment actually does)');
+  if (!existsSync(tsx) || !existsSync(probe)) {
+    console.log('  SKIP  tsx or the boot probe is missing; cannot spawn a child process');
+    return;
+  }
+
+  const refused = boot({ COOKIE_SAMESITE: 'none', COOKIE_SECURE: 'false' });
+  check('a process configured SameSite=None + Secure=false exits non-zero', refused.status === 1, {
+    status: refused.status,
+  });
+  check('it does not report a successful boot', !refused.output.includes('ENV_BOOT_ACCEPTED'), refused.output.slice(0, 120));
+  check('the printed refusal names COOKIE_SECURE', /COOKIE_SECURE/.test(refused.output));
+
+  const insecureProd = boot({ NODE_ENV: 'production', COOKIE_SAMESITE: 'lax', COOKIE_SECURE: 'false' });
+  check(
+    'a production process with COOKIE_SECURE=false exits non-zero too',
+    insecureProd.status === 1 && /COOKIE_SECURE/.test(insecureProd.output),
+    { status: insecureProd.status },
+  );
+
+  const accepted = boot({});
+  check('the shipped configuration boots cleanly (the gate is not a blanket refusal)', accepted.status === 0, {
+    status: accepted.status,
+    output: accepted.output.slice(0, 200),
+  });
+  const crossSiteDev = boot({ COOKIE_SAMESITE: 'none', COOKIE_SECURE: 'auto' });
+  check('SameSite=None + Secure=auto boots - forcing Secure resolves the contradiction', crossSiteDev.status === 0, {
+    status: crossSiteDev.status,
+    output: crossSiteDev.output.slice(0, 200),
+  });
+
+  const listed = `${refused.output}\n${insecureProd.output}`.split('\n').filter((line) => line.startsWith('  - '));
+  check(
+    'every printed issue is "  - VARIABLE: rule", never a value',
+    listed.length > 0 && listed.every((line) => /^  - [A-Z][A-Z0-9_]*: \S/.test(line)),
+    { lines: listed.map((l) => l.slice(0, 60)) },
+  );
+  check('no connection string or secret ever reaches the refusal output', !/(mongodb(\+srv)?:\/\/|Bearer |-----BEGIN)/.test(refused.output + insecureProd.output));
+}
+
 function main() {
   runInvariants();
   runDevelopmentDefaults();
@@ -159,6 +222,7 @@ function main() {
   runBootRefusals();
   runLivePolicy();
   runShippedDefaults();
+  runProcessBoot();
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
